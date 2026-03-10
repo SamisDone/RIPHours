@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Welcome to RIPHours</title>
+  <style>
+    @font-face {
+      font-family: 'Inter';
+      src: url('../../fonts/Inter-Regular.woff2') format('woff2');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'Inter';
+      src: url('../../fonts/Inter-Bold.woff2') format('woff2');
+      font-weight: 700;
+    }
+    @font-face {
+      font-family: 'Inter';
+      src: url('../../fonts/Inter-Black.woff2') format('woff2');
+      font-weight: 900;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0D0D0D;
+      color: #F1FAEE;
+      font-family: "Inter", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container { max-width: 520px; text-align: center; padding: 40px; }
+    h1 { font-size: 48px; font-weight: 900; color: #E63946; letter-spacing: -0.04em; margin-bottom: 16px; }
+    .tagline { font-size: 18px; color: rgba(241,250,238,0.7); line-height: 1.6; margin-bottom: 32px; }
+    .tagline strong { color: #E63946; }
+    ul { text-align: left; display: inline-block; margin-bottom: 32px; }
+    li { font-size: 15px; padding: 6px 0; color: #F1FAEE; list-style: none; }
+    li::before { content: "⚰ "; color: #E63946; }
+    .note { color: #52525b; font-size: 13px; margin-bottom: 24px; }
+    .close-btn {
+      background: #E63946; color: #fff; border: none;
+      padding: 14px 32px; border-radius: 8px; font-size: 14px;
+      font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer;
+    }
+    .close-btn:hover { background: #d32f3c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚰ RIPHours</h1>
+    <p class="tagline">Your scroll history, measured in <strong>days of your life</strong>.</p>
+    <p class="tagline" style="font-size:14px; margin-bottom:24px;">We're already tracking these sites for you:</p>
+    <ul>
+      <li>reddit.com</li>
+      <li>youtube.com</li>
+      <li>twitter.com / x.com</li>
+      <li>instagram.com</li>
+      <li>tiktok.com</li>
+      <li>facebook.com</li>
+    </ul>
+    <p class="note">All data stays local. No accounts. No telemetry.<br>Click the extension icon to see your stats.</p>
+    <button class="close-btn" id="close-btn">I'm Ready</button>
+  </div>
+  <script src="welcome.js"></script>
+</body>
+</html>

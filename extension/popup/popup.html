@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RIPHours</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="dot"></div>
+      <span class="brand">RIPHours</span>
+    </div>
+    <span class="since" id="since"></span>
+  </div>
+
+  <!-- Tab nav -->
+  <div class="tabs">
+    <button class="tab active" data-tab="stats">Stats</button>
+    <button class="tab" data-tab="limits">Limits</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+
+  <!-- ═══ Stats tab ═══ -->
+  <div class="tab-content active" id="tab-stats">
+    <div class="hero">
+      <div class="time-big" id="hero-time">0d 0h 0m</div>
+      <div class="time-label">of your life</div>
+      <div id="active-session-label" style="font-size: 13px; color: var(--accent); margin-top: 12px; font-weight: 600; display: none; background: rgba(255,255,255,0.05); padding: 6px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);"></div>
+      <div class="time-toggle">
+        <button class="toggle-btn active" data-view="total">All Time</button>
+        <button class="toggle-btn" data-view="today">Today</button>
+      </div>
+      <button id="btn-focus-surge" class="btn btn-primary" style="margin-top: 16px; width: auto; padding: 8px 24px; font-size: 13px; border-radius: 20px; background: rgba(230, 57, 70, 0.15); color: #E63946; border: 1px solid rgba(230, 57, 70, 0.4); box-shadow: 0 4px 12px rgba(230, 57, 70, 0.1);">
+        ⚡ Start Focus Surge (25m)
+      </button>
+    </div>
+
+    <!-- Search -->
+    <div class="search-row">
+      <input type="text" class="search-input" id="search" placeholder="Search sites...">
+    </div>
+
+    <div class="chart-section">
+      <div class="section-title">time sink breakdown</div>
+      <div id="chart"></div>
+    </div>
+
+    <!-- Weekly trends -->
+    <div class="trends-section">
+      <div class="section-title">last 7 days</div>
+      <div class="trend-chart" id="trend-chart"></div>
+    </div>
+
+    <!-- Share Card inline container -->
+    <div class="share-card-container" id="share-card-container" style="display: none; padding: 16px;">
+      <div id="card" style="width: 100%; aspect-ratio: 1.7; background: var(--surface); border: 2px solid var(--accent); border-radius: 12px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; transform-origin: top center; transform: scale(1);">
+        <div class="card-logo" style="position: absolute; top: 12px; left: 16px; font-size: 10px; font-weight: 900; color: var(--accent); letter-spacing: 0.1em;">⚰ RIPHours</div>
+        <div class="card-time" id="card-time" style="font-size: 32px; font-weight: 900; color: var(--accent); line-height: 1; letter-spacing: -0.04em;">0d 0h 0m</div>
+        <div class="card-units" style="font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 4px;">of my life</div>
+        <div class="card-tagline" style="font-size: 12px; font-weight: 400; color: var(--text); margin-top: 16px; line-height: 1.5;">RIPHours tracked this.<br>Are you okay?</div>
+        <div class="card-footer" style="position: absolute; bottom: 8px; color: var(--dim); font-size: 8px; letter-spacing: 0.1em;">riphours · private local tracking</div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+         <button class="btn btn-secondary btn-small" id="btn-close-share" style="flex: 1;">Close</button>
+         <button class="btn btn-primary btn-small" id="btn-copy-share" style="flex: 2;">Copy Image</button>
+      </div>
+    </div>
+
+    <div class="share-row" id="share-trigger-row">
+      <button class="btn btn-primary" id="btn-share">⚰ Share Shock Card</button>
+    </div>
+  </div>
+
+  <!-- ═══ Limits tab ═══ -->
+  <div class="tab-content" id="tab-limits">
+    <div class="limits-section">
+      <div class="section-title">daily limits (minutes)</div>
+      <div id="limits-list"></div>
+      <p class="limits-note">Set a daily minute limit per site. When exceeded, the site gets blocked and you'll hear an alert sound. Leave blank for no limit.</p>
+    </div>
+  </div>
+
+  <!-- ═══ Settings tab ═══ -->
+  <div class="tab-content" id="tab-settings">
+    <div class="settings-section">
+      <div class="section-title">tracked domains</div>
+      <div class="domain-list" id="domain-list"></div>
+      <div class="add-row">
+        <input type="text" id="new-domain" placeholder="e.g. netflix.com">
+        <button id="add-btn">Add</button>
+      </div>
+
+      <!-- Hard block toggle -->
+      <div class="toggle-row">
+        <div>
+          <label>Hard Block</label>
+          <div class="desc">Block site access when limit is exceeded</div>
+        </div>
+        <div class="switch" id="hard-block-toggle"></div>
+      </div>
+
+      <!-- Export Data -->
+      <div class="toggle-row" style="margin-top: 24px;">
+        <div>
+          <label>Export Data</label>
+          <div class="desc">Download your entire scrolling history as a CSV file</div>
+        </div>
+        <button class="btn btn-secondary btn-small" id="btn-export-csv" style="padding: 6px 12px; font-size: 11px;">Export CSV</button>
+      </div>
+
+      <!-- Better Alternatives -->
+      <div class="settings-section" style="margin-top: 24px;">
+        <div class="section-title">Better Alternatives</div>
+        <div class="desc" style="margin-bottom: 8px;">What should you do instead? (comma separated)</div>
+        <textarea id="better-alternatives" placeholder="e.g. Read 10 pages, Do 20 pushups, Call mom" style="
+          width: 100%; min-height: 60px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1);
+          color: #fff; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 13px; resize: vertical;
+        "></textarea>
+      </div>
+
+      <!-- Mode picker -->
+      <div class="mode-zone">
+        <div class="section-title">appearance</div>
+        <div class="mode-row">
+          <button class="mode-btn active" data-mode="dark">🌑 Dark</button>
+          <button class="mode-btn" data-mode="light">☀️ Light</button>
+          <button class="mode-btn" data-mode="system">🖥 System</button>
+        </div>
+      </div>
+
+      <!-- Accent color picker -->
+      <div class="theme-zone">
+        <div class="section-title">accent color</div>
+        <div class="theme-row">
+          <div class="theme-dot active" data-theme="red"></div>
+          <div class="theme-dot" data-theme="green"></div>
+          <div class="theme-dot" data-theme="purple"></div>
+          <div class="theme-dot" data-theme="blue"></div>
+          <div class="theme-dot" data-theme="orange"></div>
+          <div class="theme-dot" data-theme="pink"></div>
+        </div>
+      </div>
+
+      <div class="export-zone">
+        <div class="section-title">export</div>
+        <p>Download your tracking data as JSON.</p>
+        <button class="btn btn-secondary btn-small" id="export-btn">Export Data</button>
+      </div>
+
+      <div class="reset-zone">
+        <div class="section-title">danger zone</div>
+        <p>Clear all tracked time. This cannot be undone.</p>
+        <button class="btn btn-danger btn-small" id="reset-btn">Reset All Data</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset modal -->
+  <div class="overlay" id="reset-overlay">
+    <div class="modal-box">
+      <h3>Are You Sure?</h3>
+      <p>Type <code>RESET</code> to confirm.</p>
+      <input type="text" id="reset-input" placeholder="Type here..." autocomplete="off">
+      <div class="modal-btns">
+        <button class="btn btn-secondary" id="reset-cancel">Cancel</button>
+        <button class="btn btn-primary confirm-btn" id="reset-confirm">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Iron Will modal -->
+  <div class="overlay" id="iron-will-overlay" style="z-index: 9999;">
+    <div class="modal-box" style="text-align: center;">
+      <h3 style="color: #E63946;">🛡 Iron Will</h3>
+      <p style="font-size: 13px; line-height: 1.5; margin-bottom: 12px;">You are attempting to relax your limits.<br>Type the following exactly to proceed:</p>
+      <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; font-style: italic; font-size: 12px; margin-bottom: 12px; user-select: none;">
+        I am choosing to waste my limited time on earth doing nothing.
+      </div>
+      <input type="text" id="iron-will-input" placeholder="Type the phrase..." autocomplete="off">
+      <div class="modal-btns" style="margin-top: 16px;">
+        <button class="btn btn-secondary" id="iron-will-cancel">Cancel</button>
+        <button class="btn btn-primary confirm-btn" id="iron-will-confirm" disabled>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="../lib/html2canvas.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
