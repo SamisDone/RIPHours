@@ -1,0 +1,7 @@
+*.zip
+.gemini/
+.DS_Store
+tmp/
+node_modules/
+test_zip/
+*Store.zip

@@ -1,7 +1,7 @@
-﻿{
+{
   "manifest_version": 3,
   "name": "RIPHours",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Your scroll history, measured in days of your life.",
   "permissions": [
     "tabs",
@@ -17,7 +17,7 @@
     "service_worker": "background/worker.js"
   },
   "action": {
-    "default_popup": "popup/popup.html",
+    "default_popup": "popup/dashboard.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

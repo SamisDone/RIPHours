@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>⚰ Blocked — RIPHours</title>
+  <title>RIPHours — Access Limited</title>
   <style>
+    :root {
+      --bg: #09090b;
+      --text: #fafafa;
+      --text-secondary: #a1a1aa;
+      --accent: #6366f1;
+      --border: rgba(255, 255, 255, 0.05);
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
     @font-face {
       font-family: 'Inter';
       src: url('../../fonts/Inter-Regular.woff2') format('woff2');
@@ -14,35 +23,96 @@
       src: url('../../fonts/Inter-Bold.woff2') format('woff2');
       font-weight: 700;
     }
-    @font-face {
-      font-family: 'Inter';
-      src: url('../../fonts/Inter-Black.woff2') format('woff2');
-      font-weight: 900;
-    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
-      background: #0D0D0D;
-      color: #F1FAEE;
-      font-family: "Inter", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
       display: flex;
       align-items: center;
       justify-content: center;
       height: 100vh;
       -webkit-font-smoothing: antialiased;
+      overflow: hidden;
     }
-    .box { text-align: center; max-width: 420px; padding: 40px; }
-    h1 { font-size: 52px; font-weight: 900; color: #E63946; margin-bottom: 16px; }
-    .site { font-size: 20px; font-weight: 700; color: #E63946; margin-bottom: 8px; }
-    p { font-size: 15px; color: rgba(241,250,238,0.6); line-height: 1.6; margin-bottom: 28px; }
-    .note { font-size: 12px; color: #52525b; }
+
+    .container {
+      text-align: center;
+      max-width: 480px;
+      padding: 40px;
+      animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .icon {
+      font-size: 64px;
+      margin-bottom: 24px;
+      filter: drop-shadow(0 0 12px var(--accent));
+      opacity: 0.8;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+
+    .site {
+      display: inline-block;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(99, 102, 241, 0.1);
+      padding: 4px 12px;
+      border-radius: 99px;
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      margin-bottom: 24px;
+    }
+
+    p {
+      font-size: 16px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .footer {
+      font-size: 13px;
+      color: #52525b;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .brand {
+      font-weight: 700;
+      color: var(--text);
+      opacity: 0.5;
+      margin-top: 40px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+    }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h1>⚰</h1>
-    <div class="site" id="site-name"></div>
-    <p>You've hit your daily limit for this site.<br>RIPHours has blocked access for the rest of the day.</p>
-    <p id="touch-grass-text" class="note">Close this tab. Go outside. Touch grass.<br>The block resets at midnight.</p>
+  <div class="container">
+    <div class="icon">⚰</div>
+    <h1>Time's Up</h1>
+    <div class="site" id="site-name">...</div>
+    <p>You've hit your limit. RIPHours has limited access to this site to protect your time. Focus on what truly matters today.</p>
+    
+    <div class="footer" id="touch-grass-text">
+      The block resets at midnight. Go touch grass.
+    </div>
+    
+    <div class="brand">RIPHours</div>
   </div>
   <script src="blocked.js"></script>
 </body>

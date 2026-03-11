@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RIPHours — Limits</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body data-page="limits">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="dot"></div>
+      <span class="brand">RIPHours</span>
+    </div>
+    <span class="since" id="since"></span>
+  </div>
+
+  <!-- Tab nav -->
+  <div class="tabs">
+    <a href="dashboard.html" class="tab">Stats</a>
+    <a href="limits.html" class="tab active">Limits</a>
+    <a href="settings.html" class="tab">Settings</a>
+  </div>
+
+  <div class="tab-content active">
+    <div class="limits-section">
+      <div class="section-title">daily limits (minutes)</div>
+      <div id="limits-list"></div>
+      <p class="limits-note">Set a daily limit per site. When exceeded, access is restricted. Leave blank for no limit. Changes requiring loosening a limit will trigger 🛡 Iron Will.</p>
+    </div>
+  </div>
+
+  <!-- Iron Will modal -->
+  <div class="overlay" id="iron-will-overlay">
+    <div class="modal-box">
+      <h3>🛡 Iron Will</h3>
+      <p>Type the following to confirm:</p>
+      <div class="phrase-box">I am choosing to waste my limited time on earth doing nothing.</div>
+      <input type="text" id="iron-will-input" placeholder="Type the phrase..." autocomplete="off">
+      <div class="modal-btns">
+        <button class="btn btn-secondary" id="iron-will-cancel">Cancel</button>
+        <button class="btn btn-primary" id="iron-will-confirm" disabled>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

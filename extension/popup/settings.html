@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RIPHours — Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body data-page="settings">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="dot"></div>
+      <span class="brand">RIPHours</span>
+    </div>
+    <span class="since" id="since"></span>
+  </div>
+
+  <!-- Tab nav -->
+  <div class="tabs">
+    <a href="dashboard.html" class="tab">Stats</a>
+    <a href="limits.html" class="tab">Limits</a>
+    <a href="settings.html" class="tab active">Settings</a>
+  </div>
+
+  <div class="tab-content active">
+    <div class="settings-section">
+      <div class="section-title">tracked domains</div>
+      <div class="domain-list" id="domain-list"></div>
+      <div class="add-row">
+        <input type="text" id="new-domain" placeholder="e.g. netflix.com">
+        <button id="add-btn" class="btn btn-primary btn-small">Add</button>
+      </div>
+
+      <!-- Hard block toggle -->
+      <div class="toggle-row">
+        <div>
+          <label>Hard Block</label>
+          <div class="desc">Strict blocking when limit is exceeded</div>
+        </div>
+        <div class="switch" id="hard-block-toggle"></div>
+      </div>
+
+      <!-- Export Data -->
+      <div class="toggle-row">
+        <div>
+          <label>Data Management</label>
+          <div class="desc">Export your history or download raw data</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-small" id="btn-export-csv" title="Download CSV history">History CSV</button>
+          <button class="btn btn-secondary btn-small" id="export-btn" title="Export full JSON backup">Bulk JSON</button>
+        </div>
+      </div>
+
+      <!-- Better Alternatives -->
+      <div class="settings-section-alt">
+        <div class="section-title">Better Alternatives</div>
+        <div class="desc">What should you do instead? (Comma separated)</div>
+        <textarea id="better-alternatives" class="alt-textarea" placeholder="e.g. Read, Workout, Call family"></textarea>
+      </div>
+
+      <!-- Mode picker -->
+      <div class="mode-zone">
+        <div class="section-title">appearance</div>
+        <div class="mode-row">
+          <button class="mode-btn active" data-mode="dark">Dark</button>
+          <button class="mode-btn" data-mode="light">Light</button>
+          <button class="mode-btn" data-mode="system">System</button>
+        </div>
+      </div>
+
+      <!-- Accent color picker -->
+      <div class="theme-zone">
+        <div class="section-title">accent color</div>
+        <div class="theme-row">
+          <div class="theme-dot active" data-theme="red"></div>
+          <div class="theme-dot" data-theme="green"></div>
+          <div class="theme-dot" data-theme="purple"></div>
+          <div class="theme-dot" data-theme="blue"></div>
+          <div class="theme-dot" data-theme="orange"></div>
+          <div class="theme-dot" data-theme="pink"></div>
+        </div>
+      </div>
+
+      <div class="danger-zone">
+        <div class="section-title">danger zone</div>
+        <button class="btn btn-danger btn-small" id="reset-btn">Reset All Data</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset modal -->
+  <div class="overlay" id="reset-overlay">
+    <div class="modal-box">
+      <h3>Clear Data?</h3>
+      <p>This action is permanent and will delete all your local history. Type <code>RESET</code> to confirm.</p>
+      <input type="text" id="reset-input" placeholder="Type here..." autocomplete="off">
+      <div class="modal-btns">
+        <button class="btn btn-secondary" id="reset-cancel">Cancel</button>
+        <button class="btn btn-primary" id="reset-confirm" disabled>Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Iron Will modal -->
+  <div class="overlay" id="iron-will-overlay">
+    <div class="modal-box">
+      <h3>🛡 Iron Will</h3>
+      <p>Type the following to confirm:</p>
+      <div class="phrase-box">I am choosing to waste my limited time on earth doing nothing.</div>
+      <input type="text" id="iron-will-input" placeholder="Type the phrase..." autocomplete="off">
+      <div class="modal-btns">
+        <button class="btn btn-secondary" id="iron-will-cancel">Cancel</button>
+        <button class="btn btn-primary" id="iron-will-confirm" disabled>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
