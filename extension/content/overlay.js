@@ -2,6 +2,23 @@
 
 let activityTimer = null;
 
+const ACCENT_COLORS = {
+  red:    { color: "#ef4444", hover: "#dc2626", glow: "rgba(239, 68, 68, 0.2)", glowLight: "rgba(239, 68, 68, 0.1)", glowBorder: "rgba(239, 68, 68, 0.2)", glowStrong: "rgba(239, 68, 68, 0.3)" },
+  green:  { color: "#10b981", hover: "#059669", glow: "rgba(16, 185, 129, 0.2)", glowLight: "rgba(16, 185, 129, 0.1)", glowBorder: "rgba(16, 185, 129, 0.2)", glowStrong: "rgba(16, 185, 129, 0.3)" },
+  purple: { color: "#8b5cf6", hover: "#7c3aed", glow: "rgba(139, 92, 246, 0.2)", glowLight: "rgba(139, 92, 246, 0.1)", glowBorder: "rgba(139, 92, 246, 0.2)", glowStrong: "rgba(139, 92, 246, 0.3)" },
+  blue:   { color: "#3b82f6", hover: "#2563eb", glow: "rgba(59, 130, 246, 0.2)", glowLight: "rgba(59, 130, 246, 0.1)", glowBorder: "rgba(59, 130, 246, 0.2)", glowStrong: "rgba(59, 130, 246, 0.3)" },
+  orange: { color: "#f97316", hover: "#ea580c", glow: "rgba(249, 115, 22, 0.2)", glowLight: "rgba(249, 115, 22, 0.1)", glowBorder: "rgba(249, 115, 22, 0.2)", glowStrong: "rgba(249, 115, 22, 0.3)" },
+  pink:   { color: "#f43f5e", hover: "#e11d48", glow: "rgba(244, 63, 94, 0.2)", glowLight: "rgba(244, 63, 94, 0.1)", glowBorder: "rgba(244, 63, 94, 0.2)", glowStrong: "rgba(244, 63, 94, 0.3)" },
+};
+
+async function getAccent() {
+  try {
+    const data = await chrome.storage.local.get("riphours");
+    const theme = data.riphours?.settings?.theme || "red";
+    return ACCENT_COLORS[theme] || ACCENT_COLORS.red;
+  } catch { return ACCENT_COLORS.red; }
+}
+
 function send(msg) {
   try { chrome.runtime.sendMessage(msg); } catch {}
 }
@@ -40,8 +57,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
-function showGlassModal(host, hardBlock) {
+async function showGlassModal(host, hardBlock) {
   if (document.getElementById("riphours-glass-modal")) return;
+
+  const accent = await getAccent();
 
   const overlay = document.createElement("div");
   overlay.id = "riphours-glass-modal";
@@ -61,19 +80,39 @@ function showGlassModal(host, hardBlock) {
     transform: scale(0.95) translateY(20px); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   `;
 
-  modal.innerHTML = `
-    <h1 style="font-size: 36px; font-weight: 700; color: #fafafa; margin: 0 0 16px; letter-spacing: -0.02em;">Time's Up</h1>
-    <p style="font-size: 16px; color: #a1a1aa; margin: 0 0 40px; line-height: 1.6;">You've hit your limit on <span style="color: #6366f1; font-weight: 600;">${host}</span>.<br>Focus on what matters. We've limited access for now.</p>
-    <button id="rh-stop-btn" style="
-      background: #6366f1; color: #fff; border: none;
-      padding: 14px 40px; border-radius: 12px; font-size: 15px; font-weight: 600;
-      cursor: pointer; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2); transition: all 0.2s;
-    ">I Understand</button>
-  `;
+  if (hardBlock) {
+    modal.innerHTML = `
+      <h1 style="font-size: 36px; font-weight: 700; color: #fafafa; margin: 0 0 16px; letter-spacing: -0.02em;">Time's Up</h1>
+      <p style="font-size: 16px; color: #a1a1aa; margin: 0 0 40px; line-height: 1.6;">You've hit your limit on <span style="color: ${accent.color}; font-weight: 600;">${host}</span>.<br>Focus on what matters. We've limited access for now.</p>
+      <button id="rh-stop-btn" style="
+        background: ${accent.color}; color: #fff; border: none;
+        padding: 14px 40px; border-radius: 12px; font-size: 15px; font-weight: 600;
+        cursor: pointer; box-shadow: 0 4px 12px ${accent.glow}; transition: all 0.2s;
+      ">I Understand</button>
+    `;
+  } else {
+    modal.innerHTML = `
+      <h1 style="font-size: 36px; font-weight: 700; color: #fafafa; margin: 0 0 16px; letter-spacing: -0.02em;">Time's Up</h1>
+      <p style="font-size: 16px; color: #a1a1aa; margin: 0 0 40px; line-height: 1.6;">You've hit your limit on <span style="color: ${accent.color}; font-weight: 600;">${host}</span>.<br>Are you sure you want to stay?</p>
+      <div style="display: flex; gap: 16px; justify-content: center;">
+        <button id="rh-stop-btn" style="
+          background: transparent; color: #fafafa; border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 14px 24px; border-radius: 12px; font-size: 15px; font-weight: 600;
+          cursor: pointer; transition: all 0.2s;
+        ">I'll Stop</button>
+        <button id="rh-stay-btn" style="
+          background: ${accent.color}; color: #fff; border: none;
+          padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600;
+          cursor: pointer; box-shadow: 0 4px 12px ${accent.glow}; transition: all 0.2s;
+        ">Let Me Stay</button>
+      </div>
+    `;
+  }
 
   const style = document.createElement("style");
   style.textContent = `
-    #rh-stop-btn:hover { background: #4f46e5; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3); }
+    #rh-stop-btn:hover { background: ${hardBlock ? accent.hover : 'rgba(255, 255, 255, 0.05)'}; transform: translateY(-1px); ${hardBlock ? `box-shadow: 0 8px 24px ${accent.glowStrong};` : ''} }
+    #rh-stay-btn:hover { background: ${accent.hover}; transform: translateY(-1px); box-shadow: 0 8px 24px ${accent.glowStrong}; }
   `;
 
   overlay.appendChild(style);
@@ -85,7 +124,10 @@ function showGlassModal(host, hardBlock) {
     modal.style.transform = "scale(1) translateY(0)";
   });
 
-  document.getElementById("rh-stop-btn").addEventListener("click", () => {
+  const stopBtn = document.getElementById("rh-stop-btn");
+  const stayBtn = document.getElementById("rh-stay-btn");
+
+  stopBtn.addEventListener("click", () => {
     overlay.style.opacity = "0";
     modal.style.transform = "scale(0.95) translateY(20px)";
     setTimeout(() => {
@@ -97,10 +139,21 @@ function showGlassModal(host, hardBlock) {
       }
     }, 400);
   });
+
+  if (stayBtn) {
+    stayBtn.addEventListener("click", () => {
+      overlay.style.opacity = "0";
+      modal.style.transform = "scale(0.95) translateY(20px)";
+      send({ type: "dismiss-alert", host }); // Inform background to stay dismissed
+      setTimeout(() => overlay.remove(), 400);
+    });
+  }
 }
 
-function showDismissableModal(host) {
+async function showDismissableModal(host) {
   if (document.getElementById("riphours-dismissable-modal")) return;
+
+  const accent = await getAccent();
 
   const overlay = document.createElement("div");
   overlay.id = "riphours-dismissable-modal";
@@ -122,7 +175,7 @@ function showDismissableModal(host) {
 
   modal.innerHTML = `
     <h1 style="font-size: 24px; font-weight: 700; color: #fafafa; margin: 0 0 12px; letter-spacing: -0.02em;">Over Limit</h1>
-    <p style="font-size: 15px; color: #a1a1aa; margin: 0 0 32px; line-height: 1.6;">You've already exceeded your daily limit for <span style="color: #6366f1; font-weight: 600;">${host}</span>.<br>Are you sure you want to be here?</p>
+    <p style="font-size: 15px; color: #a1a1aa; margin: 0 0 32px; line-height: 1.6;">You've already exceeded your daily limit for <span style="color: ${accent.color}; font-weight: 600;">${host}</span>.<br>Are you sure you want to be here?</p>
     <button id="rh-dismiss-btn" style="
       background: transparent; color: #fafafa; border: 1px solid rgba(255, 255, 255, 0.1);
       padding: 12px 32px; border-radius: 10px; font-size: 14px; font-weight: 600;
@@ -147,6 +200,7 @@ function showDismissableModal(host) {
   document.getElementById("rh-dismiss-btn").addEventListener("click", () => {
     overlay.style.opacity = "0";
     modal.style.transform = "scale(0.95) translateY(20px)";
+    send({ type: "dismiss-alert", host }); // Inform background to stay dismissed
     setTimeout(() => overlay.remove(), 400);
   });
 }

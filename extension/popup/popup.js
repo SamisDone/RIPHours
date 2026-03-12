@@ -1,12 +1,12 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2)
+// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.2)
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 let ripData = null;
 let viewMode = "total";
 let searchQuery = "";
-let lastRenderedDomains = "";
 let lastRenderedDataStr = "";
+let lastRenderedLimitsStr = "";
 
 const DEFAULT_DOMAINS = [
   "reddit.com", "twitter.com", "x.com",
@@ -65,7 +65,7 @@ function applyAppearance(mode, accent) {
   const classes = [];
   if (mode === "light") classes.push("mode-light");
   else if (mode === "system") classes.push("mode-system");
-  if (accent && accent !== "red") classes.push("theme-" + accent);
+  if (accent) classes.push("theme-" + accent);
   document.body.className = classes.join(" ");
 
   if (currentPage === "settings") {
@@ -263,7 +263,12 @@ function renderTrends(rip) {
 
 // ── Limits Page ───────────────────────────────────────────────────
 function renderLimitsPage(rip, shouldRebuild) {
-  if (!shouldRebuild) return;
+  const limitsStr = JSON.stringify({ limits: rip.limits, domains: rip.trackedDomains });
+  const limitsChanged = limitsStr !== lastRenderedLimitsStr;
+  if (!limitsChanged && !shouldRebuild) return;
+  // Only rebuild DOM when limits or domains actually changed
+  if (!limitsChanged) return;
+  lastRenderedLimitsStr = limitsStr;
   const list = $("#limits-list");
   if (!list) return;
   
@@ -291,28 +296,35 @@ function renderLimitsPage(rip, shouldRebuild) {
     list.appendChild(row);
   });
 
+  function saveLimit(domain) {
+    const mins = parseInt(list.querySelector(`input[data-domain="${domain}"]`).value);
+    chrome.storage.local.get("riphours", (data) => {
+      const activeRip = data.riphours || ripData;
+      activeRip.limits = activeRip.limits || {};
+      const currentLimit = activeRip.limits[domain];
+      const newLimit = (!mins || mins <= 0) ? null : mins * 60;
+      const isRelaxing = (currentLimit && !newLimit) || (currentLimit && newLimit && newLimit > currentLimit);
+
+      const applyLimit = () => {
+        if (!newLimit) delete activeRip.limits[domain];
+        else activeRip.limits[domain] = newLimit;
+        saveAndSync({ riphours: activeRip }, () => {
+          ripData = activeRip;
+          toast(newLimit ? `Limit set: ${mins}m for ${domain}` : `Limit removed for ${domain}`);
+        });
+      };
+
+      if (isRelaxing) requireIronWill(applyLimit); else applyLimit();
+    });
+  }
+
   list.querySelectorAll(".save-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const domain = btn.dataset.domain;
-      const mins = parseInt(list.querySelector(`input[data-domain="${domain}"]`).value);
-      chrome.storage.local.get("riphours", (data) => {
-        const activeRip = data.riphours || ripData;
-        activeRip.limits = activeRip.limits || {};
-        const currentLimit = activeRip.limits[domain];
-        const newLimit = (!mins || mins <= 0) ? null : mins * 60;
-        const isRelaxing = (currentLimit && !newLimit) || (currentLimit && newLimit && newLimit > currentLimit);
+    btn.addEventListener("click", () => saveLimit(btn.dataset.domain));
+  });
 
-        const applyLimit = () => {
-          if (!newLimit) delete activeRip.limits[domain];
-          else activeRip.limits[domain] = newLimit;
-          saveAndSync({ riphours: activeRip }, () => {
-            ripData = activeRip;
-            toast(newLimit ? `Limit set: ${mins}m for ${domain}` : `Limit removed for ${domain}`);
-          });
-        };
-
-        if (isRelaxing) requireIronWill(applyLimit); else applyLimit();
-      });
+  list.querySelectorAll("input[data-domain]").forEach(input => {
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") saveLimit(input.dataset.domain);
     });
   });
 }

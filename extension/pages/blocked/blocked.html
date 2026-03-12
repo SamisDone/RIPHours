@@ -8,7 +8,7 @@
       --bg: #09090b;
       --text: #fafafa;
       --text-secondary: #a1a1aa;
-      --accent: #6366f1;
+      --accent: #ef4444;
       --border: rgba(255, 255, 255, 0.05);
       --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
@@ -69,10 +69,10 @@
       font-size: 16px;
       font-weight: 600;
       color: var(--accent);
-      background: rgba(99, 102, 241, 0.1);
+      background: rgba(239, 68, 68, 0.1);
       padding: 4px 12px;
       border-radius: 99px;
-      border: 1px solid rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.2);
       margin-bottom: 24px;
     }
 
@@ -115,5 +115,22 @@
     <div class="brand">RIPHours</div>
   </div>
   <script src="blocked.js"></script>
+  <script>
+    const ACCENT_MAP = {
+      red: { color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)", border: "rgba(239, 68, 68, 0.2)" },
+      green: { color: "#10b981", bg: "rgba(16, 185, 129, 0.1)", border: "rgba(16, 185, 129, 0.2)" },
+      purple: { color: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)", border: "rgba(139, 92, 246, 0.2)" },
+      blue: { color: "#3b82f6", bg: "rgba(59, 130, 246, 0.1)", border: "rgba(59, 130, 246, 0.2)" },
+      orange: { color: "#f97316", bg: "rgba(249, 115, 22, 0.1)", border: "rgba(249, 115, 22, 0.2)" },
+      pink: { color: "#f43f5e", bg: "rgba(244, 63, 94, 0.1)", border: "rgba(244, 63, 94, 0.2)" },
+    };
+    chrome.storage.local.get("riphours", (data) => {
+      const theme = data.riphours?.settings?.theme || "red";
+      const a = ACCENT_MAP[theme] || ACCENT_MAP.red;
+      document.documentElement.style.setProperty("--accent", a.color);
+      const siteEl = document.querySelector(".site");
+      if (siteEl) { siteEl.style.background = a.bg; siteEl.style.borderColor = a.border; }
+    });
+  </script>
 </body>
 </html>

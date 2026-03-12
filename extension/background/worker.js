@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Background Service Worker (v1.1)
+// ⚰ RIPHours — Background Service Worker (v1.2.2)
 // Handles: tracking, alarms, badge, alerts, blocking, context menu, break reminders
 
 let currentHost = null;
@@ -6,15 +6,18 @@ let tabStartTime = 0;
 let isWindowFocused = true;
 let alertedSites = new Set();
 let blockedSites = new Set();
+let dismissedSites = new Set(); // Reset on midnight
 let continuousStart = 0; // Track continuous scrolling for break reminders
 let breakNotified = false;
 let lastActivityTime = Date.now();
+let lastCheckedDate = new Date().toDateString(); // For midnight reset
 
 async function saveSessionState() {
   await chrome.storage.session.set({
     currentHost, tabStartTime, isWindowFocused, continuousStart, breakNotified, lastActivityTime,
     alertedSites: Array.from(alertedSites),
-    blockedSites: Array.from(blockedSites)
+    blockedSites: Array.from(blockedSites),
+    dismissedSites: Array.from(dismissedSites)
   });
 }
 
@@ -36,7 +39,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         installDate: Date.now(),
         limits: {},
         history: {},
-        settings: { hardBlock: true, theme: "red" }
+        settings: { hardBlock: true, theme: "red", mode: "dark" }
       }
     });
     chrome.tabs.create({ url: chrome.runtime.getURL("pages/welcome/welcome.html") });
@@ -92,11 +95,36 @@ chrome.alarms.get("rip-tick", (alarm) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "rip-tick") {
+    checkMidnightReset(); // Proactive reset
     flushTime();
     checkBreakReminder();
     saveDaily();
   }
 });
+
+async function checkMidnightReset() {
+  const today = new Date().toDateString();
+  const data = await chrome.storage.local.get("riphours");
+  const rip = data.riphours;
+  if (!rip) return;
+
+  if (rip._todayDate !== today) {
+    // Baseline for "Today": use yesterday's final snapshot if available
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yKey = yesterday.toISOString().slice(0, 10);
+    
+    rip._todayStart = (rip.history && rip.history[yKey]) ? { ...rip.history[yKey] } : { ...rip.sites };
+    rip._todayDate = today;
+    // Reset daily alerts, blocks, and dismissals at midnight
+    alertedSites.clear();
+    blockedSites.clear();
+    dismissedSites.clear();
+    lastCheckedDate = today;
+    await chrome.storage.local.set({ riphours: rip });
+    updateBadge(rip);
+  }
+}
 
 // Fast-path local tick: alarms are rate-limited to 30s-1m, but we want time limits
 // to fire *exactly* when they are breached. This interval runs every second
@@ -120,6 +148,7 @@ async function recoverState() {
       lastActivityTime = session.lastActivityTime || Date.now();
       alertedSites = new Set(session.alertedSites || []);
       blockedSites = new Set(session.blockedSites || []);
+      dismissedSites = new Set(session.dismissedSites || []);
     } else {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab?.url) {
@@ -168,6 +197,9 @@ async function flushTime() {
   const targetKey = resolveTrackedDomain(currentHost, rip.trackedDomains || []);
 
   rip.sites[targetKey] = (rip.sites[targetKey] || 0) + elapsed;
+
+  await checkMidnightReset();
+
   await chrome.storage.local.set({ riphours: rip });
 
   // Focus Surge Check
@@ -178,10 +210,13 @@ async function flushTime() {
     return;
   }
 
-  // Check time limits
+  // Check daily time limits (using today's usage, not all-time)
   const limit = rip.limits?.[targetKey];
-  if (limit && rip.sites[targetKey] >= limit && !alertedSites.has(targetKey)) {
-    triggerAlert(targetKey, rip);
+  if (limit) {
+    const todayUsage = (rip.sites[targetKey] || 0) - (rip._todayStart?.[targetKey] || 0);
+    if (todayUsage >= limit && !alertedSites.has(targetKey)) {
+      triggerAlert(targetKey, rip);
+    }
   }
 
   updateBadge(rip);
@@ -275,13 +310,17 @@ async function saveDaily() {
     delete rip.history[keys.shift()];
   }
 
-  // Tombstone Notification (Daily at 9 PM)
+  // Tombstone Notification (Daily at 9 PM) — uses today's usage
   const now = new Date();
   if (now.getHours() >= 21 && rip.settings?.tombstoneLastFired !== today) {
-    const totalSecs = Object.values(rip.sites).reduce((a, b) => a + b, 0);
-    if (totalSecs > 0) {
-      const hours = Math.floor(totalSecs / 3600);
-      const mins = Math.floor((totalSecs % 3600) / 60);
+    // Calculate today's total by diffing from daily start snapshot
+    let todayTotal = 0;
+    for (const domain of (rip.trackedDomains || [])) {
+      todayTotal += Math.max(0, (rip.sites[domain] || 0) - (rip._todayStart?.[domain] || 0));
+    }
+    if (todayTotal > 0) {
+      const hours = Math.floor(todayTotal / 3600);
+      const mins = Math.floor((todayTotal % 3600) / 60);
       let timeText = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
       
       chrome.notifications.create({
@@ -370,15 +409,17 @@ async function onTabActivated(tabId) {
     }
     const hostname = new URL(tab.url).hostname.replace(/^www\./, "");
 
-    // Block check: if site is blocked, redirect
-    if (blockedSites.has(hostname)) {
-      chrome.tabs.update(tabId, { url: chrome.runtime.getURL("pages/blocked/blocked.html?site=" + hostname) });
+    const data = await chrome.storage.local.get("riphours");
+    const domains = data.riphours?.trackedDomains || [];
+
+    // Block check: if site is blocked, redirect (check subdomain match)
+    const baseDomain = resolveTrackedDomain(hostname, domains);
+    if (blockedSites.has(hostname) || blockedSites.has(baseDomain)) {
+      chrome.tabs.update(tabId, { url: chrome.runtime.getURL("pages/blocked/blocked.html?site=" + (baseDomain || hostname)) });
       currentHost = null;
       return;
     }
 
-    const data = await chrome.storage.local.get("riphours");
-    const domains = data.riphours?.trackedDomains || [];
     if (matchesDomain(hostname, domains)) {
       currentHost = hostname;
       tabStartTime = Date.now();
@@ -400,7 +441,7 @@ async function onTabActivated(tabId) {
       
       // If we are over the limit, alerted, and hard mode is disabled, show warning
       const baseDomain = resolveTrackedDomain(hostname, domains);
-      if (alertedSites.has(baseDomain) && data.riphours?.settings?.hardBlock === false) {
+      if (alertedSites.has(baseDomain) && !dismissedSites.has(baseDomain) && data.riphours?.settings?.hardBlock === false) {
         chrome.tabs.sendMessage(tabId, { type: "show-dismissable-alert", host: baseDomain }).catch(() => {});
       }
     } else {
@@ -457,9 +498,14 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === "close-active-tab" && sender.tab?.id) {
     chrome.tabs.remove(sender.tab.id).catch(() => {});
   }
-  // Popup: force flush (so UI gets real-time data)
+  // Content script: force flush (so UI gets real-time data)
   if (msg.type === "force-flush") {
     flushTime();
+  }
+  // Content script: dismiss alert (Let Me Stay)
+  if (msg.type === "dismiss-alert" && msg.host) {
+    dismissedSites.add(msg.host);
+    saveSessionState();
   }
 });
 
