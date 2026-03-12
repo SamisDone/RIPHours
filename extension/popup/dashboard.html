@@ -53,8 +53,16 @@
       <div class="trend-chart" id="trend-chart"></div>
     </div>
 
-    <!-- Share Card inline container -->
-    <div class="share-card-container" id="share-card-container" style="display: none;">
+    <div class="share-row" id="share-trigger-row">
+      <button class="btn btn-primary" id="btn-share">Share Shock Card</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Share Card Overlay -->
+  <div class="overlay" id="share-card-container">
+    <div class="modal-box share-modal-box">
       <div id="card" class="share-card">
         <div class="card-logo">RIPHours</div>
         <div class="card-time" id="card-time">0d 0h 0m</div>
@@ -67,13 +75,7 @@
          <button class="btn btn-primary btn-small" id="btn-copy-share">Copy Image</button>
       </div>
     </div>
-
-    <div class="share-row" id="share-trigger-row">
-      <button class="btn btn-primary" id="btn-share">Share Shock Card</button>
-    </div>
   </div>
-
-  <div class="toast" id="toast"></div>
 
   <script src="../lib/html2canvas.min.js"></script>
   <script src="popup.js"></script>

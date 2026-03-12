@@ -359,12 +359,10 @@ if (currentPage === "dashboard") {
   $("#btn-share")?.addEventListener("click", () => {
     const total = Object.values(ripData.sites || {}).reduce((a, b) => a + b, 0);
     $("#card-time").textContent = fmtFull(total);
-    $("#share-trigger-row").style.display = "none";
-    $("#share-card-container").style.display = "block";
+    $("#share-card-container").classList.add("open");
   });
   $("#btn-close-share")?.addEventListener("click", () => {
-    $("#share-card-container").style.display = "none";
-    $("#share-trigger-row").style.display = "block";
+    $("#share-card-container").classList.remove("open");
   });
   $("#btn-copy-share")?.addEventListener("click", async () => {
     const btn = $("#btn-copy-share");

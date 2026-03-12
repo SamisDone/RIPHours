@@ -433,11 +433,13 @@ body[data-page="settings"] .tab[href="settings.html"] {
 .btn-small { height: 32px; font-size: 11px; padding: 0 12px; width: auto; }
 
 /* ── Share Card ────────────────────────────────── */
-.share-card-container { padding: 16px; }
+.share-modal-box {
+  padding: 24px;
+}
 .share-card {
   width: 100%;
   aspect-ratio: 1.7;
-  background: var(--surface);
+  background: var(--bg); /* Solid background for overlay */
   border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
   display: flex;
@@ -447,6 +449,7 @@ body[data-page="settings"] .tab[href="settings.html"] {
   position: relative;
   overflow: hidden;
   padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 .card-logo {
   position: absolute;

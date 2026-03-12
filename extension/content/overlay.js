@@ -20,7 +20,11 @@ async function getAccent() {
 }
 
 function send(msg) {
-  try { chrome.runtime.sendMessage(msg); } catch {}
+  try {
+    if (chrome.runtime?.id) {
+      chrome.runtime.sendMessage(msg).catch(() => {});
+    }
+  } catch {}
 }
 
 // Report user activity for idle detection (throttled to once per 10s)
@@ -54,8 +58,23 @@ chrome.runtime.onMessage.addListener((msg) => {
     showGlassModal(msg.host, msg.hardBlock);
   } else if (msg.type === "show-dismissable-alert") {
     showDismissableModal(msg.host);
+  } else if (msg.type === "remove-overlay") {
+    removeExistingOverlays();
   }
 });
+
+function removeExistingOverlays() {
+  const ids = ["riphours-glass-modal", "riphours-dismissable-modal"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.opacity = "0";
+      const modal = el.querySelector("div");
+      if (modal) modal.style.transform = "scale(0.95) translateY(20px)";
+      setTimeout(() => el.remove(), 400);
+    }
+  });
+}
 
 async function showGlassModal(host, hardBlock) {
   if (document.getElementById("riphours-glass-modal")) return;
@@ -128,10 +147,8 @@ async function showGlassModal(host, hardBlock) {
   const stayBtn = document.getElementById("rh-stay-btn");
 
   stopBtn.addEventListener("click", () => {
-    overlay.style.opacity = "0";
-    modal.style.transform = "scale(0.95) translateY(20px)";
+    removeExistingOverlays();
     setTimeout(() => {
-      overlay.remove();
       if (hardBlock) {
         window.location.href = chrome.runtime.getURL("pages/blocked/blocked.html?site=" + host);
       } else {
@@ -142,10 +159,8 @@ async function showGlassModal(host, hardBlock) {
 
   if (stayBtn) {
     stayBtn.addEventListener("click", () => {
-      overlay.style.opacity = "0";
-      modal.style.transform = "scale(0.95) translateY(20px)";
+      removeExistingOverlays();
       send({ type: "dismiss-alert", host }); // Inform background to stay dismissed
-      setTimeout(() => overlay.remove(), 400);
     });
   }
 }
@@ -198,9 +213,7 @@ async function showDismissableModal(host) {
   });
 
   document.getElementById("rh-dismiss-btn").addEventListener("click", () => {
-    overlay.style.opacity = "0";
-    modal.style.transform = "scale(0.95) translateY(20px)";
+    removeExistingOverlays();
     send({ type: "dismiss-alert", host }); // Inform background to stay dismissed
-    setTimeout(() => overlay.remove(), 400);
   });
 }

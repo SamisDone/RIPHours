@@ -249,7 +249,11 @@ async function playAudioOffscreen() {
 
 async function triggerAlert(host, rip) {
   alertedSites.add(host);
-  const hardBlock = rip.settings?.hardBlock !== false;
+  // Focus Surge is ALWAYS a hard block, even if global settings say soft block
+  const isFocusSurge = Date.now() < (rip.settings?.focusModeUntil || 0);
+  const hardBlock = isFocusSurge || (rip.settings?.hardBlock !== false);
+  
+  saveSessionState(); // Persist immediately after state change
 
   chrome.notifications.create("rip-limit-" + host, {
     type: "basic",
@@ -441,7 +445,16 @@ async function onTabActivated(tabId) {
       
       // If we are over the limit, alerted, and hard mode is disabled, show warning
       const baseDomain = resolveTrackedDomain(hostname, domains);
-      if (alertedSites.has(baseDomain) && !dismissedSites.has(baseDomain) && data.riphours?.settings?.hardBlock === false) {
+      
+      // If hardBlock is enabled, treat as blocked. 
+      // This handles cases where settings changed from hard->soft or vice versa while tab was open.
+      const hardBlock = (ripData?.settings?.hardBlock !== false) || (Date.now() < (ripData?.settings?.focusModeUntil || 0));
+      if (!hardBlock && blockedSites.has(baseDomain)) {
+        blockedSites.delete(baseDomain);
+        saveSessionState();
+      }
+
+      if (alertedSites.has(baseDomain) && !dismissedSites.has(baseDomain) && !hardBlock) {
         chrome.tabs.sendMessage(tabId, { type: "show-dismissable-alert", host: baseDomain }).catch(() => {});
       }
     } else {
@@ -506,6 +519,20 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === "dismiss-alert" && msg.host) {
     dismissedSites.add(msg.host);
     saveSessionState();
+    // Broadcast to all other tabs of this host to remove their overlays synchronously
+    chrome.tabs.query({}, (tabs) => {
+      for (const t of tabs) {
+        if (t.url) {
+          try {
+            const h = new URL(t.url).hostname.replace(/^www\./, "");
+            const base = resolveTrackedDomain(h, ripData?.trackedDomains || []);
+            if (base === msg.host) {
+              chrome.tabs.sendMessage(t.id, { type: "remove-overlay" }).catch(() => {});
+            }
+          } catch {}
+        }
+      }
+    });
   }
 });
 
