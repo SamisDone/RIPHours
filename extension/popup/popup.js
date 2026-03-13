@@ -246,7 +246,10 @@ function renderTrends(rip) {
     days.push({ label: dayNames[d.getDay()], total, isToday: i === 0 });
   }
 
-  if (days[6].total === 0) days[6].total = Object.values(rip.sites || {}).reduce((a, b) => a + b, 0);
+  if (days[6].total === 0) {
+    const todayView = (viewMode === "today") ? getTodaySeconds(rip) : getTodaySeconds(rip);
+    days[6].total = Object.values(todayView).reduce((a, b) => a + b, 0);
+  }
 
   const maxDay = Math.max(...days.map(d => d.total), 1);
   days.forEach(day => {

@@ -178,12 +178,19 @@ async function flushTime() {
   if (!currentHost) return;
 
   const now = Date.now();
-  const elapsed = Math.floor((now - tabStartTime) / 1000);
+  const diffMs = now - tabStartTime;
+  const elapsed = Math.floor(diffMs / 1000);
 
-  tabStartTime = now;
+  if (elapsed <= 0) return;
+  if (elapsed > 120) { // Safety: jump in time (e.g. sleep/wake)
+    tabStartTime = now;
+    saveSessionState();
+    return;
+  }
+
+  // Preserve fractional milliseconds for the next tick
+  tabStartTime += (elapsed * 1000);
   saveSessionState();
-
-  if (elapsed <= 0 || elapsed > 120) return;
 
   // Auto-idle: check if content script reported activity
   const idleGap = Math.floor((now - lastActivityTime) / 1000);
@@ -194,7 +201,12 @@ async function flushTime() {
   if (!rip) return;
   
   // Store time under the base tracked domain, not the subdomain
-  const targetKey = resolveTrackedDomain(currentHost, rip.trackedDomains || []);
+  const domains = rip.trackedDomains || [];
+  const targetKey = resolveTrackedDomain(currentHost, domains);
+
+  // If the site was JUST added, we might not have been tracking it yet
+  // This check ensures we don't accidentally attribute time if it's not in the list
+  if (!matchesDomain(currentHost, domains)) return;
 
   rip.sites[targetKey] = (rip.sites[targetKey] || 0) + elapsed;
 
@@ -514,6 +526,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   // Content script: force flush (so UI gets real-time data)
   if (msg.type === "force-flush") {
     flushTime();
+    // If we aren't tracking anything, maybe it's because a new site was just added
+    if (!currentHost) {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, ([tab]) => {
+        if (tab?.id) onTabActivated(tab.id);
+      });
+    }
   }
   // Content script: dismiss alert (Let Me Stay)
   if (msg.type === "dismiss-alert" && msg.host) {
@@ -533,6 +551,20 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
         }
       }
     });
+  }
+});
+
+// ── Storage Listener ──────────────────────────────────────────────
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.riphours) {
+    // If tracked domains changed, re-check current tab
+    const oldDomains = changes.riphours.oldValue?.trackedDomains || [];
+    const newDomains = changes.riphours.newValue?.trackedDomains || [];
+    if (newDomains.length !== oldDomains.length) {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, ([tab]) => {
+        if (tab?.id) onTabActivated(tab.id);
+      });
+    }
   }
 });
 
