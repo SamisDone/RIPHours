@@ -460,7 +460,7 @@ async function onTabActivated(tabId) {
       
       // If hardBlock is enabled, treat as blocked. 
       // This handles cases where settings changed from hard->soft or vice versa while tab was open.
-      const hardBlock = (ripData?.settings?.hardBlock !== false) || (Date.now() < (ripData?.settings?.focusModeUntil || 0));
+      const hardBlock = (data.riphours?.settings?.hardBlock !== false) || (Date.now() < (data.riphours?.settings?.focusModeUntil || 0));
       if (!hardBlock && blockedSites.has(baseDomain)) {
         blockedSites.delete(baseDomain);
         saveSessionState();
@@ -537,19 +537,23 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === "dismiss-alert" && msg.host) {
     dismissedSites.add(msg.host);
     saveSessionState();
+    
     // Broadcast to all other tabs of this host to remove their overlays synchronously
-    chrome.tabs.query({}, (tabs) => {
-      for (const t of tabs) {
-        if (t.url) {
-          try {
-            const h = new URL(t.url).hostname.replace(/^www\./, "");
-            const base = resolveTrackedDomain(h, ripData?.trackedDomains || []);
-            if (base === msg.host) {
-              chrome.tabs.sendMessage(t.id, { type: "remove-overlay" }).catch(() => {});
-            }
-          } catch {}
+    chrome.storage.local.get("riphours", (data) => {
+      const rip = data.riphours;
+      chrome.tabs.query({}, (tabs) => {
+        for (const t of tabs) {
+          if (t.url) {
+            try {
+              const h = new URL(t.url).hostname.replace(/^www\./, "");
+              const base = resolveTrackedDomain(h, rip?.trackedDomains || []);
+              if (base === msg.host) {
+                chrome.tabs.sendMessage(t.id, { type: "remove-overlay" }).catch(() => {});
+              }
+            } catch {}
+          }
         }
-      }
+      });
     });
   }
 });
