@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.2)
+// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.8)
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -18,7 +18,18 @@ const currentPage = document.body.dataset.page || "dashboard";
 // ── Storage Wrapper ───────────────────────────────────────────────
 function saveAndSync(dataObj, callback) {
   chrome.storage.local.set(dataObj, () => {
-    chrome.storage.sync.set({ riphoursSync: dataObj.riphours }).catch(() => {});
+    // Only sync the slim subset (settings, domains, limits) to avoid
+    // exceeding chrome.storage.sync's 8KB per-item quota.
+    // Full history sync is handled by the background worker's syncCloudData.
+    const rip = dataObj.riphours;
+    if (rip) {
+      const syncPayload = {
+        settings: rip.settings,
+        trackedDomains: rip.trackedDomains,
+        limits: rip.limits
+      };
+      chrome.storage.sync.set({ riphoursSync: syncPayload }).catch(() => {});
+    }
     if (callback) callback();
   });
 }
@@ -209,7 +220,9 @@ function renderChart(rip) {
     let barClass = "normal";
     let limitClass = "";
     if (limit) {
-      const ratio = secs / limit;
+      // Always compare today's usage against the daily limit, regardless of view mode
+      const todaySecs = getTodaySeconds(rip)[domain] || 0;
+      const ratio = todaySecs / limit;
       if (ratio >= 1) { barClass = "over"; limitClass = "over"; }
       else if (ratio >= 0.75) { barClass = "warn"; limitClass = "warn"; }
     }
@@ -238,16 +251,37 @@ function renderTrends(rip) {
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const days = [];
-  for (let i = 6; i >= 0; i--) {
+
+  // Collect date keys for the last 8 days (we need day-1 to compute diffs)
+  const dateKeys = [];
+  for (let i = 7; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    const total = history[key] ? Object.values(history[key]).reduce((a, b) => a + b, 0) : 0;
-    days.push({ label: dayNames[d.getDay()], total, isToday: i === 0 });
+    dateKeys.push(d.toISOString().slice(0, 10));
   }
 
+  // History stores cumulative snapshots, so daily usage = snapshot[day] - snapshot[day-1]
+  for (let i = 1; i <= 7; i++) {
+    const key = dateKeys[i];
+    const prevKey = dateKeys[i - 1];
+    const d = new Date();
+    d.setDate(d.getDate() - (7 - i));
+    const isToday = (i === 7);
+
+    let dailyTotal = 0;
+    if (history[key]) {
+      const snapshot = history[key];
+      const prevSnapshot = history[prevKey] || {};
+      for (const domain of Object.keys(snapshot)) {
+        dailyTotal += Math.max(0, (snapshot[domain] || 0) - (prevSnapshot[domain] || 0));
+      }
+    }
+    days.push({ label: dayNames[d.getDay()], total: dailyTotal, isToday });
+  }
+
+  // For today, use live data if history hasn't been saved yet
   if (days[6].total === 0) {
-    const todayView = (viewMode === "today") ? getTodaySeconds(rip) : getTodaySeconds(rip);
+    const todayView = getTodaySeconds(rip);
     days[6].total = Object.values(todayView).reduce((a, b) => a + b, 0);
   }
 
@@ -268,8 +302,8 @@ function renderTrends(rip) {
 function renderLimitsPage(rip, shouldRebuild) {
   const limitsStr = JSON.stringify({ limits: rip.limits, domains: rip.trackedDomains });
   const limitsChanged = limitsStr !== lastRenderedLimitsStr;
-  if (!limitsChanged && !shouldRebuild) return;
-  // Only rebuild DOM when limits or domains actually changed
+  // Only rebuild when limits or domains actually changed — NOT when sites data
+  // changes (which happens every second). This prevents clearing unsaved inputs.
   if (!limitsChanged) return;
   lastRenderedLimitsStr = limitsStr;
   const list = $("#limits-list");
@@ -436,7 +470,16 @@ if (currentPage === "settings") {
     if (dates.length === 0) return toast("No history.");
     const allDomains = Array.from(new Set(dates.flatMap(d => Object.keys(history[d])))).sort();
     let csv = "Date," + allDomains.join(",") + "\n";
-    dates.forEach(d => csv += d + "," + allDomains.map(dom => history[d][dom] || 0).join(",") + "\n");
+    // History stores cumulative snapshots — diff consecutive days for daily usage
+    dates.forEach((d, i) => {
+      const snapshot = history[d];
+      const prevSnapshot = (i > 0) ? history[dates[i - 1]] : {};
+      const dailyVals = allDomains.map(dom => {
+        const daily = Math.max(0, (snapshot[dom] || 0) - (prevSnapshot[dom] || 0));
+        return Math.floor(daily / 60); // Export in minutes for readability
+      });
+      csv += d + "," + dailyVals.join(",") + "\n";
+    });
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     chrome.downloads.download({ url, filename: "riphours-history.csv", saveAs: true });
   });

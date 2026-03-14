@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Background Service Worker (v1.2.2)
+// ⚰ RIPHours — Background Service Worker (v1.2.8)
 // Handles: tracking, alarms, badge, alerts, blocking, context menu, break reminders
 
 let currentHost = null;
@@ -196,6 +196,9 @@ async function flushTime() {
   const idleGap = Math.floor((now - lastActivityTime) / 1000);
   if (idleGap > IDLE_TIMEOUT) return; // User is idle, don't count
 
+  // Run midnight reset BEFORE reading storage so we get fresh data
+  await checkMidnightReset();
+
   const data = await chrome.storage.local.get("riphours");
   const rip = data.riphours;
   if (!rip) return;
@@ -209,8 +212,6 @@ async function flushTime() {
   if (!matchesDomain(currentHost, domains)) return;
 
   rip.sites[targetKey] = (rip.sites[targetKey] || 0) + elapsed;
-
-  await checkMidnightReset();
 
   await chrome.storage.local.set({ riphours: rip });
 
@@ -456,7 +457,7 @@ async function onTabActivated(tabId) {
       saveSessionState();
       
       // If we are over the limit, alerted, and hard mode is disabled, show warning
-      const baseDomain = resolveTrackedDomain(hostname, domains);
+      // baseDomain already declared above at the block-check
       
       // If hardBlock is enabled, treat as blocked. 
       // This handles cases where settings changed from hard->soft or vice versa while tab was open.
@@ -467,7 +468,7 @@ async function onTabActivated(tabId) {
       }
 
       if (alertedSites.has(baseDomain) && !dismissedSites.has(baseDomain) && !hardBlock) {
-        chrome.tabs.sendMessage(tabId, { type: "show-dismissable-alert", host: baseDomain }).catch(() => {});
+        chrome.tabs.sendMessage(tabId, { type: "show-alert", host: baseDomain, hardBlock: false }).catch(() => {});
       }
     } else {
       currentHost = null;
@@ -568,6 +569,31 @@ chrome.storage.onChanged.addListener((changes, area) => {
       chrome.tabs.query({ active: true, lastFocusedWindow: true }, ([tab]) => {
         if (tab?.id) onTabActivated(tab.id);
       });
+    }
+
+    // Focus Surge: if just activated, immediately block ALL open tracked tabs
+    const oldSurge = changes.riphours.oldValue?.settings?.focusModeUntil || 0;
+    const newSurge = changes.riphours.newValue?.settings?.focusModeUntil || 0;
+    if (newSurge > Date.now() && newSurge !== oldSurge) {
+      const domains = newDomains.length ? newDomains : oldDomains;
+      chrome.tabs.query({}, (tabs) => {
+        for (const t of tabs) {
+          if (t.url && t.url.startsWith("http")) {
+            try {
+              const h = new URL(t.url).hostname.replace(/^www\./, "");
+              if (matchesDomain(h, domains)) {
+                const base = resolveTrackedDomain(h, domains);
+                chrome.tabs.update(t.id, {
+                  url: chrome.runtime.getURL("pages/blocked/blocked.html?site=" + base)
+                });
+              }
+            } catch {}
+          }
+        }
+      });
+      // Stop tracking current host since it's now blocked
+      currentHost = null;
+      saveSessionState();
     }
   }
 });
