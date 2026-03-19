@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.9)
+// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.10)
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -161,17 +161,7 @@ function renderDashboard(rip, shouldRebuild) {
   const timeEl = $("#hero-time");
   if (timeEl) timeEl.textContent = fmtFull(total);
 
-  // Live Session Label
-  const sessionEl = $("#active-session-label");
-  if (sessionEl) {
-    if (rip._session?.currentHost && rip._session.isWindowFocused) {
-      const activeSecs = Math.max(0, Math.floor((Date.now() - rip._session.continuousStart) / 1000));
-      sessionEl.textContent = `Currently on ${rip._session.currentHost} for ${fmtTimer(activeSecs)}`;
-      sessionEl.style.display = "inline-block";
-    } else {
-      sessionEl.style.display = "none";
-    }
-  }
+
 
   // Focus Surge Button
   const surgeBtn = $("#btn-focus-surge");
@@ -545,6 +535,19 @@ setInterval(async () => {
   if (data.riphours) {
     const session = await chrome.storage.session.get(null);
     data.riphours._session = session;
+
+    // Real-time update for live session label independent of data diffing
+    const sessionEl = $("#active-session-label");
+    if (sessionEl && currentPage === "dashboard") {
+      if (session?.currentHost && session.isWindowFocused) {
+        const activeSecs = Math.max(0, Math.floor((Date.now() - session.continuousStart) / 1000));
+        sessionEl.textContent = `Currently on ${session.currentHost} for ${fmtTimer(activeSecs)}`;
+        sessionEl.style.display = "inline-block";
+      } else {
+        sessionEl.style.display = "none";
+      }
+    }
+
     render(data.riphours);
   }
 }, 1000);

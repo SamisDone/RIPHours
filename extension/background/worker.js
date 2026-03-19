@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Background Service Worker (v1.2.9)
+// ⚰ RIPHours — Background Service Worker (v1.2.10)
 // Handles: tracking, alarms, badge, alerts, blocking, context menu, break reminders
 
 let currentHost = null;
@@ -132,6 +132,7 @@ async function checkMidnightReset() {
 setInterval(() => {
   if (currentHost && isWindowFocused) {
     flushTime();
+    checkBreakReminder();
   }
 }, 1000); // Check every second for real-time precision.
 
@@ -577,6 +578,64 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 // ── Storage Listener ──────────────────────────────────────────────
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.riphours) {
+    const oldLimits = changes.riphours.oldValue?.limits || {};
+    const newLimits = changes.riphours.newValue?.limits || {};
+    const newValue = changes.riphours.newValue;
+    let limitsChanged = false;
+
+    if (newValue) {
+      for (const domain in newLimits) {
+        if (newLimits[domain] !== oldLimits[domain]) {
+          limitsChanged = true;
+          const todayUsage = (newValue.sites[domain] || 0) - (newValue._todayStart?.[domain] || 0);
+          if (todayUsage >= newLimits[domain]) {
+            if (!alertedSites.has(domain)) {
+              triggerAlert(domain, newValue);
+            }
+          } else {
+            alertedSites.delete(domain);
+            blockedSites.delete(domain);
+            dismissedSites.delete(domain);
+            chrome.tabs.query({}, (tabs) => {
+              for (const t of tabs) {
+                if (t.url) {
+                  try {
+                    const h = new URL(t.url).hostname.replace(/^www\./, "");
+                    const base = resolveTrackedDomain(h, newValue.trackedDomains || []);
+                    if (base === domain) {
+                      chrome.tabs.sendMessage(t.id, { type: "remove-overlay" }).catch(() => {});
+                    }
+                  } catch {}
+                }
+              }
+            });
+          }
+        }
+      }
+      for (const domain in oldLimits) {
+        if (!(domain in newLimits)) {
+          limitsChanged = true;
+          alertedSites.delete(domain);
+          blockedSites.delete(domain);
+          dismissedSites.delete(domain);
+          chrome.tabs.query({}, (tabs) => {
+            for (const t of tabs) {
+              if (t.url) {
+                try {
+                  const h = new URL(t.url).hostname.replace(/^www\./, "");
+                  const base = resolveTrackedDomain(h, newValue.trackedDomains || []);
+                  if (base === domain) {
+                    chrome.tabs.sendMessage(t.id, { type: "remove-overlay" }).catch(() => {});
+                  }
+                } catch {}
+              }
+            }
+          });
+        }
+      }
+      if (limitsChanged) saveSessionState();
+    }
+
     // If tracked domains changed, re-check current tab
     const oldDomains = changes.riphours.oldValue?.trackedDomains || [];
     const newDomains = changes.riphours.newValue?.trackedDomains || [];
