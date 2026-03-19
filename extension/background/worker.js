@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Background Service Worker (v1.2.8)
+// ⚰ RIPHours — Background Service Worker (v1.2.9)
 // Handles: tracking, alarms, badge, alerts, blocking, context menu, break reminders
 
 let currentHost = null;
@@ -133,7 +133,7 @@ setInterval(() => {
   if (currentHost && isWindowFocused) {
     flushTime();
   }
-}, 5000); // Check every 5 seconds for precision limits.
+}, 1000); // Check every second for real-time precision.
 
 // ── Recover state on SW wake-up ───────────────────────────────────
 async function recoverState() {
@@ -328,8 +328,10 @@ async function saveDaily() {
   }
 
   // Tombstone Notification (Daily at 9 PM) — uses today's usage
+  // Only fire when _todayDate has been properly initialized for today,
+  // otherwise _todayStart is stale/missing and we'd compute garbage totals.
   const now = new Date();
-  if (now.getHours() >= 21 && rip.settings?.tombstoneLastFired !== today) {
+  if (now.getHours() >= 21 && rip.settings?.tombstoneLastFired !== today && rip._todayDate === today) {
     // Calculate today's total by diffing from daily start snapshot
     let todayTotal = 0;
     for (const domain of (rip.trackedDomains || [])) {
@@ -404,10 +406,23 @@ async function syncCloudData(localRip) {
 
 // ── FR-04: Badge ──────────────────────────────────────────────────
 function updateBadge(rip) {
-  const total = Object.values(rip.sites).reduce((a, b) => a + b, 0);
+  // Show today's usage on the badge, not all-time cumulative
+  const today = new Date().toDateString();
+  let total = 0;
+  if (rip._todayDate === today && rip._todayStart) {
+    for (const domain of (rip.trackedDomains || [])) {
+      total += Math.max(0, (rip.sites[domain] || 0) - (rip._todayStart[domain] || 0));
+    }
+  }
+  const mins = Math.floor(total / 60);
   const hours = Math.floor(total / 3600);
-  const text = hours >= 24 ? Math.floor(hours / 24) + "d" : hours + "h";
-  chrome.action.setBadgeText({ text: total > 0 ? text : "" });
+  let text = "";
+  if (total > 0) {
+    if (hours >= 24) text = Math.floor(hours / 24) + "d";
+    else if (hours > 0) text = hours + "h";
+    else text = mins + "m";
+  }
+  chrome.action.setBadgeText({ text });
   chrome.action.setBadgeBackgroundColor({ color: "#E63946" });
 }
 

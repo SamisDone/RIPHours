@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.8)
+// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.9)
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -39,15 +39,18 @@ function fmtFull(seconds) {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  return `${d}d ${h}h ${m}m`;
+  const s = seconds % 60;
+  return `${d}d ${h}h ${m}m ${s}s`;
 }
 function fmtShort(seconds) {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
   if (d > 0) return d + "d " + h + "h";
   if (h > 0) return h + "h " + m + "m";
-  return m + "m";
+  if (m > 0) return m + "m " + s + "s";
+  return s + "s";
 }
 function fmtTimer(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -184,9 +187,10 @@ function renderDashboard(rip, shouldRebuild) {
     }
   }
 
-  // Complex renders (only if changed)
-  if (shouldRebuild || searchQuery) {
-    renderChart(rip);
+  // Complex renders: chart always refreshes for real-time updates,
+  // trends only rebuild when data actually changes (daily data, expensive)
+  renderChart(rip);
+  if (shouldRebuild) {
     renderTrends(rip);
   }
 }
