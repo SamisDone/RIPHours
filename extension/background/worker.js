@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Background Service Worker (v1.2.10)
+// ⚰ RIPHours — Background Service Worker (v1.2.11)
 // Handles: tracking, alarms, badge, alerts, blocking, context menu, break reminders
 
 let currentHost = null;
