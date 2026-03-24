@@ -8,13 +8,13 @@ let alertedSites = new Set();
 let blockedSites = new Set();
 let dismissedSites = new Set(); // Reset on midnight
 let continuousStart = 0; // Track continuous scrolling for break reminders
-let breakNotified = false;
+let lastNotifiedMinute = 0;
 let lastActivityTime = Date.now();
 let lastCheckedDate = new Date().toDateString(); // For midnight reset
 
 async function saveSessionState() {
   await chrome.storage.session.set({
-    currentHost, tabStartTime, isWindowFocused, continuousStart, breakNotified, lastActivityTime,
+    currentHost, tabStartTime, isWindowFocused, continuousStart, lastNotifiedMinute, lastActivityTime,
     alertedSites: Array.from(alertedSites),
     blockedSites: Array.from(blockedSites),
     dismissedSites: Array.from(dismissedSites)
@@ -145,7 +145,7 @@ async function recoverState() {
       tabStartTime = session.tabStartTime || Date.now();
       isWindowFocused = session.isWindowFocused ?? true;
       continuousStart = session.continuousStart || Date.now();
-      breakNotified = session.breakNotified || false;
+      lastNotifiedMinute = session.lastNotifiedMinute || 0;
       lastActivityTime = session.lastActivityTime || Date.now();
       alertedSites = new Set(session.alertedSites || []);
       blockedSites = new Set(session.blockedSites || []);
@@ -297,16 +297,17 @@ async function triggerAlert(host, rip) {
 
 // ── Break reminder ────────────────────────────────────────────────
 function checkBreakReminder() {
-  if (!currentHost || breakNotified) return;
-  const elapsed = Date.now() - continuousStart;
-  if (elapsed >= BREAK_THRESHOLD) {
-    breakNotified = true;
+  if (!currentHost) return;
+  const elapsedMinutes = Math.floor((Date.now() - continuousStart) / 60000);
+  
+  if (elapsedMinutes >= 30 && elapsedMinutes % 30 === 0 && lastNotifiedMinute !== elapsedMinutes) {
+    lastNotifiedMinute = elapsedMinutes;
     saveSessionState();
-    chrome.notifications.create("rip-break", {
+    chrome.notifications.create("rip-break-" + elapsedMinutes, {
       type: "basic",
       iconUrl: chrome.runtime.getURL("icons/icon128.png"),
       title: "⚰ Take a Break",
-      message: "You've been scrolling for 30+ minutes. Stretch, hydrate, look away.",
+      message: `You've been scrolling for ${elapsedMinutes} minutes. Stretch, hydrate, look away.`,
       priority: 2
     });
   }
@@ -467,7 +468,7 @@ async function onTabActivated(tabId) {
       
       if (Date.now() - lastActivityTime > 30 * 60 * 1000) {
         continuousStart = Date.now();
-        breakNotified = false;
+        lastNotifiedMinute = 0;
       }
       
       saveSessionState();
@@ -531,7 +532,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     const now = Date.now();
     if (now - lastActivityTime > 30 * 60 * 1000) { // 30 minutes
       continuousStart = now;
-      breakNotified = false;
+      lastNotifiedMinute = 0;
     }
     lastActivityTime = now;
     saveSessionState();
