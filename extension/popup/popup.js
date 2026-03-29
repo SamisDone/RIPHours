@@ -9,7 +9,7 @@ let lastRenderedDataStr = "";
 let lastRenderedLimitsStr = "";
 
 const DEFAULT_DOMAINS = [
-  "reddit.com", "twitter.com", "x.com",
+  "reddit.com", "x.com",
   "youtube.com", "instagram.com", "tiktok.com", "facebook.com"
 ];
 
@@ -539,8 +539,10 @@ setInterval(async () => {
     // Real-time update for live session label independent of data diffing
     const sessionEl = $("#active-session-label");
     if (sessionEl && currentPage === "dashboard") {
-      if (session?.currentHost && session.isWindowFocused) {
-        const activeSecs = Math.max(0, Math.floor((Date.now() - session.continuousStart) / 1000));
+      const csStart = session?.continuousStart || 0;
+      const csElapsed = csStart > 0 ? (Date.now() - csStart) : 0;
+      if (session?.currentHost && session.isWindowFocused && csElapsed > 0 && csElapsed < 24 * 60 * 60 * 1000) {
+        const activeSecs = Math.max(0, Math.floor(csElapsed / 1000));
         sessionEl.textContent = `Currently on ${session.currentHost} for ${fmtTimer(activeSecs)}`;
         sessionEl.style.display = "inline-block";
       } else {

@@ -7,7 +7,7 @@ let isWindowFocused = true;
 let alertedSites = new Set();
 let blockedSites = new Set();
 let dismissedSites = new Set(); // Reset on midnight
-let continuousStart = 0; // Track continuous scrolling for break reminders
+let continuousStart = Date.now(); // Track continuous scrolling for break reminders
 let lastNotifiedMinute = 0;
 let lastActivityTime = Date.now();
 let lastCheckedDate = new Date().toDateString(); // For midnight reset
@@ -22,7 +22,7 @@ async function saveSessionState() {
 }
 
 const DEFAULT_DOMAINS = [
-  "reddit.com", "twitter.com", "x.com",
+  "reddit.com", "x.com",
   "youtube.com", "instagram.com", "tiktok.com", "facebook.com"
 ];
 
@@ -43,6 +43,49 @@ chrome.runtime.onInstalled.addListener((details) => {
       }
     });
     chrome.tabs.create({ url: chrome.runtime.getURL("pages/welcome/welcome.html") });
+  }
+
+  // One-time migration: merge twitter.com → x.com (same site)
+  if (details.reason === "update") {
+    chrome.storage.local.get("riphours", (data) => {
+      const rip = data.riphours;
+      if (!rip) return;
+      const domains = rip.trackedDomains || [];
+      if (domains.includes("twitter.com")) {
+        // Merge cumulative time
+        if (rip.sites?.["twitter.com"]) {
+          rip.sites["x.com"] = (rip.sites["x.com"] || 0) + rip.sites["twitter.com"];
+          delete rip.sites["twitter.com"];
+        }
+        // Merge limits (keep the stricter one)
+        if (rip.limits?.["twitter.com"]) {
+          if (rip.limits["x.com"]) {
+            rip.limits["x.com"] = Math.min(rip.limits["x.com"], rip.limits["twitter.com"]);
+          } else {
+            rip.limits["x.com"] = rip.limits["twitter.com"];
+          }
+          delete rip.limits["twitter.com"];
+        }
+        // Merge history snapshots
+        if (rip.history) {
+          for (const date of Object.keys(rip.history)) {
+            if (rip.history[date]["twitter.com"]) {
+              rip.history[date]["x.com"] = (rip.history[date]["x.com"] || 0) + rip.history[date]["twitter.com"];
+              delete rip.history[date]["twitter.com"];
+            }
+          }
+        }
+        // Merge _todayStart snapshot
+        if (rip._todayStart?.["twitter.com"]) {
+          rip._todayStart["x.com"] = (rip._todayStart["x.com"] || 0) + rip._todayStart["twitter.com"];
+          delete rip._todayStart["twitter.com"];
+        }
+        // Remove twitter.com from tracked domains, ensure x.com is present
+        rip.trackedDomains = domains.filter(d => d !== "twitter.com");
+        if (!rip.trackedDomains.includes("x.com")) rip.trackedDomains.push("x.com");
+        chrome.storage.local.set({ riphours: rip });
+      }
+    });
   }
 
   // Context menu: right-click "Add to RIP"
@@ -298,7 +341,17 @@ async function triggerAlert(host, rip) {
 // ── Break reminder ────────────────────────────────────────────────
 function checkBreakReminder() {
   if (!currentHost) return;
-  const elapsedMinutes = Math.floor((Date.now() - continuousStart) / 60000);
+
+  // Safety: if continuousStart is 0 or stale (> 24 hours), reset it
+  const now = Date.now();
+  if (!continuousStart || continuousStart <= 0 || (now - continuousStart) > 24 * 60 * 60 * 1000) {
+    continuousStart = now;
+    lastNotifiedMinute = 0;
+    saveSessionState();
+    return;
+  }
+
+  const elapsedMinutes = Math.floor((now - continuousStart) / 60000);
   
   if (elapsedMinutes >= 30 && elapsedMinutes % 30 === 0 && lastNotifiedMinute !== elapsedMinutes) {
     lastNotifiedMinute = elapsedMinutes;
