@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.11)
+// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.12)
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
