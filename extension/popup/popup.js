@@ -1,4 +1,4 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.12)
+// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.13)
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -401,10 +401,32 @@ if (currentPage === "dashboard") {
     btn.textContent = "Generating...";
     btn.disabled = true;
     try {
+      // Temporarily expand the card to a fixed size for a clean capture
+      const origWidth = card.style.width;
+      const origHeight = card.style.height;
+      const origMaxWidth = card.style.maxWidth;
+      card.style.width = "480px";
+      card.style.height = "auto";
+      card.style.maxWidth = "none";
+
       const canvas = await html2canvas(card, {
-        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || "#0D0D0D",
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || "#09090b",
         scale: 2,
+        width: 480,
+        height: card.offsetHeight,
+        useCORS: true,
+        allowTaint: true,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 520,
+        windowHeight: card.offsetHeight + 40,
       });
+
+      // Restore original styles
+      card.style.width = origWidth;
+      card.style.height = origHeight;
+      card.style.maxWidth = origMaxWidth;
+
       canvas.toBlob(async (blob) => {
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
         toast("Image copied to clipboard!");
@@ -527,10 +549,20 @@ chrome.storage.local.get("riphours", async (data) => {
     data.riphours._session = session;
     render(data.riphours, true);
   }
+  // On popup open, always tell the background to re-detect the active tab
+  // so that tracking resumes if it was lost during a tab switch
+  try { chrome.runtime.sendMessage({ type: "force-flush" }); } catch {}
 });
 
 setInterval(async () => {
-  chrome.runtime.sendMessage({ type: "force-flush" });
+  // Send force-flush and wait a moment for the background worker to
+  // process it and write updated data to storage before we read
+  try {
+    await chrome.runtime.sendMessage({ type: "force-flush" });
+  } catch {}
+  // Small delay to let the async flushTime() in background finish writing
+  await new Promise(r => setTimeout(r, 50));
+
   const data = await chrome.storage.local.get("riphours");
   if (data.riphours) {
     const session = await chrome.storage.session.get(null);

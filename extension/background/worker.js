@@ -1,7 +1,8 @@
-// ⚰ RIPHours — Background Service Worker (v1.2.12)
+// ⚰ RIPHours — Background Service Worker (v1.2.13)
 // Handles: tracking, alarms, badge, alerts, blocking, context menu, break reminders
 
 let currentHost = null;
+let currentTabId = null; // Track which tab we're monitoring
 let tabStartTime = 0;
 let isWindowFocused = true;
 let alertedSites = new Set();
@@ -14,7 +15,7 @@ let lastCheckedDate = new Date().toDateString(); // For midnight reset
 
 async function saveSessionState() {
   await chrome.storage.session.set({
-    currentHost, tabStartTime, isWindowFocused, continuousStart, lastNotifiedMinute, lastActivityTime,
+    currentHost, currentTabId, tabStartTime, isWindowFocused, continuousStart, lastNotifiedMinute, lastActivityTime,
     alertedSites: Array.from(alertedSites),
     blockedSites: Array.from(blockedSites),
     dismissedSites: Array.from(dismissedSites)
@@ -185,6 +186,7 @@ async function recoverState() {
     const session = await chrome.storage.session.get(null);
     if (session.currentHost !== undefined) {
       currentHost = session.currentHost;
+      currentTabId = session.currentTabId || null;
       tabStartTime = session.tabStartTime || Date.now();
       isWindowFocused = session.isWindowFocused ?? true;
       continuousStart = session.continuousStart || Date.now();
@@ -201,6 +203,7 @@ async function recoverState() {
         const domains = data.riphours?.trackedDomains || [];
         if (matchesDomain(hostname, domains)) {
           currentHost = hostname;
+          currentTabId = tab.id;
           tabStartTime = Date.now();
           continuousStart = Date.now();
           isWindowFocused = true;
@@ -509,6 +512,7 @@ async function onTabActivated(tabId) {
 
     if (matchesDomain(hostname, domains)) {
       currentHost = hostname;
+      currentTabId = tabId;
       tabStartTime = Date.now();
       
       // Focus Surge instant intercept
@@ -542,10 +546,12 @@ async function onTabActivated(tabId) {
       }
     } else {
       currentHost = null;
+      currentTabId = null;
       saveSessionState();
     }
   } catch {
     currentHost = null;
+    currentTabId = null;
     saveSessionState();
   }
 }
@@ -561,6 +567,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     await flushTime();
     isWindowFocused = false;
     currentHost = null;
+    currentTabId = null;
   } else {
     isWindowFocused = true;
     const [tab] = await chrome.tabs.query({ active: true, windowId });
@@ -569,14 +576,20 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 });
 
 // ── Messages ──────────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((msg, sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Content script: visibility
+  // IMPORTANT: Only act on visibility messages from the tab we're currently
+  // tracking. When the user switches from Tab A → Tab B, Tab A sends
+  // visibility:false AFTER Tab B has already been activated. Without this
+  // guard, that stale message would nuke currentHost and kill tracking.
   if (msg.type === "visibility" && sender.tab?.id) {
     if (msg.visible) {
       onTabActivated(sender.tab.id);
-    } else {
+    } else if (sender.tab.id === currentTabId) {
+      // Only clear tracking if this is still the active tracked tab
       flushTime();
       currentHost = null;
+      currentTabId = null;
       saveSessionState();
     }
   }
@@ -594,15 +607,25 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === "close-active-tab" && sender.tab?.id) {
     chrome.tabs.remove(sender.tab.id).catch(() => {});
   }
-  // Content script: force flush (so UI gets real-time data)
+  // Popup: force flush (so UI gets real-time data)
+  // Must be async and return true to keep the message channel open
   if (msg.type === "force-flush") {
-    flushTime();
-    // If we aren't tracking anything, maybe it's because a new site was just added
-    if (!currentHost) {
-      chrome.tabs.query({ active: true, lastFocusedWindow: true }, ([tab]) => {
-        if (tab?.id) onTabActivated(tab.id);
-      });
-    }
+    (async () => {
+      await flushTime();
+      // Always re-detect the active tab to ensure tracking resumes
+      // after the user switches tabs and comes back to the popup
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tab?.id && tab.url && tab.url.startsWith("http")) {
+        const hostname = new URL(tab.url).hostname.replace(/^www\./, "");
+        const data = await chrome.storage.local.get("riphours");
+        const domains = data.riphours?.trackedDomains || [];
+        if (matchesDomain(hostname, domains) && !currentHost) {
+          await onTabActivated(tab.id);
+        }
+      }
+      sendResponse({ ok: true });
+    })();
+    return true; // Keep message channel open for async response
   }
   // Content script: dismiss alert (Let Me Stay)
   if (msg.type === "dismiss-alert" && msg.host) {
