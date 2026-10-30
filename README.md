@@ -105,7 +105,7 @@ On first run you pick which sites to track. reddit.com, x.com, youtube.com, inst
 - Your tracked sites, limits and settings sync between computers through Chrome Sync, if you have it on. **Usage time does not sync.** Each computer keeps its own count.
 - Incognito is never counted. If you allow the extension in incognito, blocks still apply there.
 
-Full text: [PRIVACY_POLICY.md](extension/PRIVACY_POLICY.md).
+Full text: [PRIVACY.md](PRIVACY.md).
 
 ## Permissions
 
@@ -150,6 +150,6 @@ extension/
 
 There's no build step. The files in `extension/` are exactly what Chrome loads.
 
-## Credits
+## License
 
-Type is set in [Inter](https://rsms.me/inter/) and [Instrument Serif](https://github.com/Instrument/instrument-serif), both under the SIL Open Font License. The license texts are in `extension/fonts/`.
+[MIT](LICENSE). The bundled fonts are not covered by it: type is set in [Inter](https://rsms.me/inter/) and [Instrument Serif](https://github.com/Instrument/instrument-serif), both under the SIL Open Font License, with the license texts in `extension/fonts/`.
