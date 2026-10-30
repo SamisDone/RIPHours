@@ -1,37 +1,38 @@
-# 🛡 Privacy Policy — RIPHours
+# RIPHours privacy policy
 
-**Last Updated: March 2026**
+Last updated: October 30, 2026
 
-RIPHours was built with a "Privacy by Architecture" philosophy. We believe your browsing habits and time-usage data are deeply personal and should never leave your control.
+RIPHours has no server. It makes no network requests of its own, has no analytics, and has no account system.
 
-## 1. Data Collection
+## What is stored, and where
 
-RIPHours tracks the active time spent on domains configured by the user.
+**On your device** (`chrome.storage.local`):
 
-- **What is tracked:** Cumulative seconds spent per domain.
-- **What is NOT tracked:** Specific URLs, page content, incognito browsing, or any activity on sites not explicitly added by the user.
+- The sites you chose to track, their daily limits, and your settings.
+- Seconds spent per tracked site, per day, for the last 120 days, plus an all-time total per site.
+- The date you installed the extension and a random device identifier used only to tell your own devices apart in Chrome Sync.
 
-## 2. Data Storage
+Only the domain is recorded, never the page, path, title or content. Sites you don't track are not recorded at all.
 
-- **Local Storage:** All tracking data is stored in `chrome.storage.local` on your personal device.
-- **Cloud Sync:** If you are signed into Chrome and have sync enabled, your settings and daily totals are synced via `chrome.storage.sync`. This data is encrypted by Google and is only accessible by your Chrome instances.
-- **Zero External Servers:** We do not operate any backend servers. No data is ever transmitted to us or any third parties.
+**In Chrome Sync** (`chrome.storage.sync`), if you are signed in to Chrome with sync turned on: your tracked sites, limits and settings, so they follow you to other computers. Google stores this as part of your Chrome account. Usage time is not synced; each device keeps its own.
 
-## 3. Telemetry and Analytics
+## What the extension reads
 
-- **No Analytics:** We do not use Google Analytics, Mixpanel, or any other tracking scripts.
-- **No Telemetry:** We do not collect "usage data" about how you use the extension itself.
+- **Tab addresses**, to tell whether the active tab belongs to a tracked site.
+- **On tracked sites only**, a small script watches for input (mouse, keyboard, scroll, touch) and for playing audio or video, so idle time isn't counted. It reports only "the page is in use"; it reads no page content and records no keystrokes.
 
-## 4. Third-Party Access
+## Incognito
 
-Since we do not collect your data, we cannot sell, trade, or otherwise transfer your information to outside parties.
+Time in incognito windows is never counted. If you allow RIPHours in incognito, blocks still apply there.
 
-## 5. User Control
+## Exports
 
-- **Export:** You can export your data as JSON or CSV at any time from the Settings tab.
-- **Delete:** You can clear all tracking data instantly by typing `RESET` in the Settings tab.
-- **Remove:** You can stop tracking any domain at any time.
+CSV and JSON exports are files saved to your computer by you. Nothing is uploaded.
 
----
+## Deleting your data
 
-_Your time is yours. Your data should be too._
+Settings → "Erase usage history" deletes recorded time on that device. Removing the extension deletes everything it stored locally. Synced settings can be cleared from your Google account's Chrome Sync data.
+
+## Contact
+
+Questions: open an issue at https://github.com/SamisDone/RIPHours/issues.

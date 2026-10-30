@@ -1,587 +1,791 @@
-// ⚰ RIPHours — Multi-Page Popup Logic (v1.2.13)
+import {
+  ACCENTS, FOCUS_MS, IRON_WILL_PHRASE, applyTheme, dayKey, faviconUrl, formatClock, formatDate,
+  formatDuration, keyToDate, send, shiftDay, splitDuration, sumTracked,
+} from "../shared/core.js";
+import { canvasToBlob, drawShareCard } from "./share-card.js";
 
-const $ = (s) => document.querySelector(s);
-const $$ = (s) => document.querySelectorAll(s);
-let ripData = null;
-let viewMode = "total";
-let searchQuery = "";
-let lastRenderedDataStr = "";
-let lastRenderedLimitsStr = "";
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
-const DEFAULT_DOMAINS = [
-  "reddit.com", "x.com",
-  "youtube.com", "instagram.com", "tiktok.com", "facebook.com"
-];
+const TABS = ["stats", "limits", "settings"];
+const VIEW_KEY = "riphours-popup";
 
-const currentPage = document.body.dataset.page || "dashboard";
+let state = null;
+const view = { tab: "stats", range: "all", filter: "", hoverDay: null };
 
-// ── Storage Wrapper ───────────────────────────────────────────────
-function saveAndSync(dataObj, callback) {
-  chrome.storage.local.set(dataObj, () => {
-    // Only sync the slim subset (settings, domains, limits) to avoid
-    // exceeding chrome.storage.sync's 8KB per-item quota.
-    // Full history sync is handled by the background worker's syncCloudData.
-    const rip = dataObj.riphours;
-    if (rip) {
-      const syncPayload = {
-        settings: rip.settings,
-        trackedDomains: rip.trackedDomains,
-        limits: rip.limits
-      };
-      chrome.storage.sync.set({ riphoursSync: syncPayload }).catch(() => {});
-    }
-    if (callback) callback();
-  });
+try {
+  const saved = JSON.parse(localStorage.getItem(VIEW_KEY)) || {};
+  if (TABS.includes(saved.tab)) view.tab = saved.tab;
+  if (saved.range === "today" || saved.range === "all") view.range = saved.range;
+} catch {}
+
+function saveView() {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ tab: view.tab, range: view.range }));
+  } catch {}
 }
 
-// ── Helpers ───────────────────────────────────────────────────────
-function fmtFull(seconds) {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return `${d}d ${h}h ${m}m ${s}s`;
-}
-function fmtShort(seconds) {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (d > 0) return d + "d " + h + "h";
-  if (h > 0) return h + "h " + m + "m";
-  if (m > 0) return m + "m " + s + "s";
-  return s + "s";
-}
-function fmtTimer(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-function toast(msg) {
-  const el = $("#toast");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 2000);
-}
-function daysSince(ts) {
-  const days = Math.floor((Date.now() - ts) / 86400000);
-  if (days === 0) return "today";
-  if (days === 1) return "1 day ago";
-  return days + " days ago";
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key === "style") for (const [p, v] of Object.entries(value)) node.style.setProperty(p, v);
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (value === true) node.setAttribute(key, "");
+    else if (value !== false && value != null) node.setAttribute(key, value);
+  }
+  node.append(...children);
+  return node;
 }
 
-// ── Appearance ────────────────────────────────────────────────────
-function applyAppearance(mode, accent) {
-  const classes = [];
-  if (mode === "light") classes.push("mode-light");
-  else if (mode === "system") classes.push("mode-system");
-  if (accent) classes.push("theme-" + accent);
-  document.body.className = classes.join(" ");
+function favicon(domain) {
+  return el("img", { class: "favicon", src: faviconUrl(domain), alt: "", width: 16, height: 16, decoding: "async" });
+}
 
-  if (currentPage === "settings") {
-    $$(".theme-dot").forEach(d => d.classList.toggle("active", d.dataset.theme === accent));
-    $$(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+let toastTimer = null;
+function toast(message) {
+  const node = $("#toast");
+  node.textContent = message;
+  node.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => node.classList.remove("show"), 2600);
+}
+
+async function act(promise, success) {
+  try {
+    const result = await promise;
+    if (success) toast(typeof success === "function" ? success(result) : success);
+    await load();
+    return result;
+  } catch (err) {
+    toast(err.message);
+    return null;
   }
 }
 
-// ── Today/Total toggle ────────────────────────────────────────────
-if (currentPage === "dashboard") {
-  $$(".toggle-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      $$(".toggle-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      viewMode = btn.dataset.view;
-      if (ripData) render(ripData, true);
-    });
-  });
-
-  $("#search").addEventListener("input", (e) => {
-    searchQuery = e.target.value.toLowerCase();
-    if (ripData) renderChart(ripData);
-  });
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = el("a", { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-// ── Get today's seconds ───────────────────────────────────────────
-function getTodaySeconds(rip) {
-  const today = new Date().toDateString();
-  if (rip._todayDate !== today) {
-    rip._todayStart = { ...rip.sites };
-    rip._todayDate = today;
-    chrome.storage.local.set({ riphours: rip });
-  }
-  const result = {};
-  for (const domain of rip.trackedDomains) {
-    const current = rip.sites[domain] || 0;
-    const start = rip._todayStart?.[domain] || 0;
-    result[domain] = Math.max(0, current - start);
-  }
-  return result;
-}
+// ── Data loop ─────────────────────────────────────────────────────
 
-// ── Render Entry ──────────────────────────────────────────────────
-function render(rip, forceRebuild = false) {
-  ripData = rip;
-  const dataStr = JSON.stringify({ 
-    sites: rip.sites, 
-    limits: rip.limits, 
-    domains: rip.trackedDomains,
-    settings: rip.settings 
-  });
-
-  const hasDataChanged = dataStr !== lastRenderedDataStr;
-  lastRenderedDataStr = dataStr;
-
-  // 1. Core Appearance (always apply to body)
-  const mode = rip.settings?.mode || "dark";
-  const accent = rip.settings?.theme || "red";
-  applyAppearance(mode, accent);
-
-  // 2. Install date (once)
-  const sinceEl = $("#since");
-  if (sinceEl && rip.installDate && !sinceEl.textContent.trim()) {
-    sinceEl.textContent = "since " + daysSince(rip.installDate);
-  }
-
-  // 3. Page specific render
-  if (currentPage === "dashboard") renderDashboard(rip, hasDataChanged || forceRebuild);
-  else if (currentPage === "limits") renderLimitsPage(rip, hasDataChanged || forceRebuild);
-  else if (currentPage === "settings") renderSettingsPage(rip, hasDataChanged || forceRebuild);
-}
-
-// ── Dashboard Logic ───────────────────────────────────────────────
-function renderDashboard(rip, shouldRebuild) {
-  // Update Hero Timer (fast)
-  let viewSites = rip.sites || {};
-  if (viewMode === "today") viewSites = getTodaySeconds(rip);
-  const total = Object.values(viewSites).reduce((a, b) => a + b, 0);
-  const timeEl = $("#hero-time");
-  if (timeEl) timeEl.textContent = fmtFull(total);
-
-
-
-  // Focus Surge Button
-  const surgeBtn = $("#btn-focus-surge");
-  if (surgeBtn) {
-    const surgeUntil = rip.settings?.focusModeUntil || 0;
-    if (Date.now() < surgeUntil) {
-      const remaining = Math.max(0, Math.ceil((surgeUntil - Date.now()) / 1000));
-      surgeBtn.textContent = `⚡ Focus Active (${fmtTimer(remaining)})`;
-      surgeBtn.disabled = true;
-    } else {
-      surgeBtn.textContent = "⚡ Start Focus Surge (25m)";
-      surgeBtn.disabled = false;
-    }
-  }
-
-  // Complex renders: chart always refreshes for real-time updates,
-  // trends only rebuild when data actually changes (daily data, expensive)
-  renderChart(rip);
-  if (shouldRebuild) {
-    renderTrends(rip);
-  }
-}
-
-function renderChart(rip) {
-  const chart = $("#chart");
-  if (!chart) return;
-
-  const sites = rip.sites || {};
-  const limits = rip.limits || {};
-  const domains = rip.trackedDomains || [];
-  let viewSites = (viewMode === "today") ? getTodaySeconds(rip) : sites;
-
-  let filtered = [...domains];
-  if (searchQuery) filtered = filtered.filter(d => d.includes(searchQuery));
-  
-  const sorted = filtered.sort((a, b) => (viewSites[b] || 0) - (viewSites[a] || 0));
-  const maxVal = Math.max(...sorted.map(d => viewSites[d] || 0), 1);
-  
-  chart.innerHTML = "";
-  if (sorted.length === 0) {
-    chart.innerHTML = `<div class="empty-msg">${searchQuery ? "No matches." : "No sites tracked yet."}</div>`;
+async function load(refresh = false) {
+  try {
+    state = await send("get-state", { refresh });
+  } catch (err) {
+    console.error("RIPHours:", err);
     return;
   }
-
-  sorted.forEach(domain => {
-    const secs = viewSites[domain] || 0;
-    const pct = Math.max((secs / maxVal) * 100, secs > 0 ? 2 : 1);
-    const limit = limits[domain];
-
-    let barClass = "normal";
-    let limitClass = "";
-    if (limit) {
-      // Always compare today's usage against the daily limit, regardless of view mode
-      const todaySecs = getTodaySeconds(rip)[domain] || 0;
-      const ratio = todaySecs / limit;
-      if (ratio >= 1) { barClass = "over"; limitClass = "over"; }
-      else if (ratio >= 0.75) { barClass = "warn"; limitClass = "warn"; }
-    }
-
-    const row = document.createElement("div");
-    row.className = "bar-row";
-    row.innerHTML = `
-      <div class="bar-label">
-        <a class="domain" href="https://${domain}" target="_blank">${domain}</a>
-        <span class="time-info"><span class="time">${fmtShort(secs)}</span>${limit ? `<span class="limit-tag ${limitClass}">/ ${Math.floor(limit / 60)}m</span>` : ""}</span>
-      </div>
-      <div class="bar-track">
-        <div class="bar-fill ${barClass}" style="width:${pct}%"></div>
-        ${limit ? `<div class="limit-marker" style="left:${Math.min((limit / maxVal) * 100, 100)}%"></div>` : ""}
-      </div>
-    `;
-    chart.appendChild(row);
-  });
+  applyTheme(state.settings);
+  render();
 }
 
-function renderTrends(rip) {
-  const container = $("#trend-chart");
-  if (!container) return;
-  const history = rip.history || {};
-  container.innerHTML = "";
-
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const days = [];
-
-  // Collect date keys for the last 8 days (we need day-1 to compute diffs)
-  const dateKeys = [];
-  for (let i = 7; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    dateKeys.push(d.toISOString().slice(0, 10));
-  }
-
-  // History stores cumulative snapshots, so daily usage = snapshot[day] - snapshot[day-1]
-  for (let i = 1; i <= 7; i++) {
-    const key = dateKeys[i];
-    const prevKey = dateKeys[i - 1];
-    const d = new Date();
-    d.setDate(d.getDate() - (7 - i));
-    const isToday = (i === 7);
-
-    let dailyTotal = 0;
-    if (history[key]) {
-      const snapshot = history[key];
-      const prevSnapshot = history[prevKey] || {};
-      for (const domain of Object.keys(snapshot)) {
-        dailyTotal += Math.max(0, (snapshot[domain] || 0) - (prevSnapshot[domain] || 0));
-      }
-    }
-    days.push({ label: dayNames[d.getDay()], total: dailyTotal, isToday });
-  }
-
-  // For today, use live data if history hasn't been saved yet
-  if (days[6].total === 0) {
-    const todayView = getTodaySeconds(rip);
-    days[6].total = Object.values(todayView).reduce((a, b) => a + b, 0);
-  }
-
-  const maxDay = Math.max(...days.map(d => d.total), 1);
-  days.forEach(day => {
-    const wrap = document.createElement("div");
-    wrap.className = "trend-bar-wrap" + (day.isToday ? " today" : "");
-    const pct = Math.max((day.total / maxDay) * 100, 3);
-    wrap.innerHTML = `
-      <div class="trend-bar" style="height:${pct}%" title="${fmtShort(day.total)}"></div>
-      <span class="trend-day">${day.label}</span>
-    `;
-    container.appendChild(wrap);
-  });
+function render() {
+  if (!state) return;
+  $("#since").textContent = `since ${formatDate(state.installDate)}`;
+  if (view.tab === "stats") renderStats();
+  if (view.tab === "limits") renderLimits();
+  if (view.tab === "settings") renderSettings();
 }
 
-// ── Limits Page ───────────────────────────────────────────────────
-function renderLimitsPage(rip, shouldRebuild) {
-  const limitsStr = JSON.stringify({ limits: rip.limits, domains: rip.trackedDomains });
-  const limitsChanged = limitsStr !== lastRenderedLimitsStr;
-  // Only rebuild when limits or domains actually changed — NOT when sites data
-  // changes (which happens every second). This prevents clearing unsaved inputs.
-  if (!limitsChanged) return;
-  lastRenderedLimitsStr = limitsStr;
-  const list = $("#limits-list");
-  if (!list) return;
-  
-  const domains = rip.trackedDomains || [];
-  const limits = rip.limits || {};
-  list.innerHTML = "";
+// ── Tabs ──────────────────────────────────────────────────────────
 
-  if (domains.length === 0) {
-    list.innerHTML = '<div class="empty-msg">Add domains in Settings first.</div>';
-    return;
+function moveIndicator(animate = true) {
+  const tab = $(`#tab-${view.tab}`);
+  const indicator = $(".tab-indicator");
+  if (!animate) indicator.style.transition = "none";
+  indicator.style.setProperty("--x", `${tab.offsetLeft}px`);
+  indicator.style.setProperty("--w", `${tab.offsetWidth}px`);
+  if (!animate) requestAnimationFrame(() => indicator.style.removeProperty("transition"));
+}
+
+function selectTab(name, { focus = false } = {}) {
+  view.tab = name;
+  for (const id of TABS) {
+    const tab = $(`#tab-${id}`);
+    const selected = id === name;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    $(`#view-${id}`).hidden = !selected;
+    if (selected && focus) tab.focus();
   }
-
-  [...domains].sort().forEach(domain => {
-    const current = limits[domain] ? Math.floor(limits[domain] / 60) : "";
-    const row = document.createElement("div");
-    row.className = "limit-row";
-    row.innerHTML = `
-      <span class="domain-name">${domain}</span>
-      <div class="limit-input-wrap">
-        <input type="number" min="1" placeholder="—" value="${current}" data-domain="${domain}">
-        <span class="unit">min</span>
-        <button class="save-btn" data-domain="${domain}">Set</button>
-      </div>
-    `;
-    list.appendChild(row);
-  });
-
-  function saveLimit(domain) {
-    const mins = parseInt(list.querySelector(`input[data-domain="${domain}"]`).value);
-    chrome.storage.local.get("riphours", (data) => {
-      const activeRip = data.riphours || ripData;
-      activeRip.limits = activeRip.limits || {};
-      const currentLimit = activeRip.limits[domain];
-      const newLimit = (!mins || mins <= 0) ? null : mins * 60;
-      const isRelaxing = (currentLimit && !newLimit) || (currentLimit && newLimit && newLimit > currentLimit);
-
-      const applyLimit = () => {
-        if (!newLimit) delete activeRip.limits[domain];
-        else activeRip.limits[domain] = newLimit;
-        saveAndSync({ riphours: activeRip }, () => {
-          ripData = activeRip;
-          toast(newLimit ? `Limit set: ${mins}m for ${domain}` : `Limit removed for ${domain}`);
-        });
-      };
-
-      if (isRelaxing) requireIronWill(applyLimit); else applyLimit();
-    });
-  }
-
-  list.querySelectorAll(".save-btn").forEach(btn => {
-    btn.addEventListener("click", () => saveLimit(btn.dataset.domain));
-  });
-
-  list.querySelectorAll("input[data-domain]").forEach(input => {
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") saveLimit(input.dataset.domain);
-    });
-  });
+  $("main").scrollTop = 0;
+  moveIndicator();
+  saveView();
+  render();
 }
 
-// ── Settings Page ─────────────────────────────────────────────────
-function renderSettingsPage(rip, shouldRebuild) {
-  const altInput = $("#better-alternatives");
-  if (altInput && document.activeElement !== altInput) {
-    altInput.value = rip.settings?.alternatives || "";
-  }
-
-  const hb = rip.settings?.hardBlock !== false;
-  const toggle = $("#hard-block-toggle");
-  if (toggle) toggle.classList.toggle("on", hb);
-
-  if (shouldRebuild) {
-    const domainList = $("#domain-list");
-    if (domainList) {
-      domainList.innerHTML = "";
-      [...(rip.trackedDomains || [])].sort().forEach(d => {
-        const item = document.createElement("div");
-        item.className = "domain-item";
-        item.innerHTML = `<a href="https://${d}" target="_blank">${d}</a><button class="del-btn" data-domain="${d}">×</button>`;
-        domainList.appendChild(item);
-      });
-    }
-  }
-}
-
-// ── Event Handlers ────────────────────────────────────────────────
-if (currentPage === "dashboard") {
-  $("#btn-share")?.addEventListener("click", () => {
-    const total = Object.values(ripData.sites || {}).reduce((a, b) => a + b, 0);
-    $("#card-time").textContent = fmtFull(total);
-    $("#share-card-container").classList.add("open");
-  });
-  $("#btn-close-share")?.addEventListener("click", () => {
-    $("#share-card-container").classList.remove("open");
-  });
-  $("#btn-copy-share")?.addEventListener("click", async () => {
-    const btn = $("#btn-copy-share");
-    const card = $("#card");
-    btn.textContent = "Generating...";
-    btn.disabled = true;
-    try {
-      // Temporarily expand the card to a fixed size for a clean capture
-      const origWidth = card.style.width;
-      const origHeight = card.style.height;
-      const origMaxWidth = card.style.maxWidth;
-      card.style.width = "480px";
-      card.style.height = "auto";
-      card.style.maxWidth = "none";
-
-      const canvas = await html2canvas(card, {
-        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || "#09090b",
-        scale: 2,
-        width: 480,
-        height: card.offsetHeight,
-        useCORS: true,
-        allowTaint: true,
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 520,
-        windowHeight: card.offsetHeight + 40,
-      });
-
-      // Restore original styles
-      card.style.width = origWidth;
-      card.style.height = origHeight;
-      card.style.maxWidth = origMaxWidth;
-
-      canvas.toBlob(async (blob) => {
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        toast("Image copied to clipboard!");
-        btn.textContent = "Copied!";
-        setTimeout(() => { btn.textContent = "Copy Image"; btn.disabled = false; }, 2000);
-      }, "image/png");
-    } catch (err) {
-      btn.textContent = "Error";
-      setTimeout(() => { btn.textContent = "Copy Image"; btn.disabled = false; }, 2000);
-    }
-  });
-  $("#btn-focus-surge")?.addEventListener("click", () => {
-    ripData.settings = ripData.settings || {};
-    ripData.settings.focusModeUntil = Date.now() + 25 * 60 * 1000;
-    saveAndSync({ riphours: ripData }, () => {
-      toast("Focus Surge active!");
-      render(ripData, true);
-    });
-  });
-}
-
-if (currentPage === "settings") {
-  $("#add-btn")?.addEventListener("click", addDomain);
-  $("#new-domain")?.addEventListener("keydown", (e) => { if (e.key === "Enter") addDomain(); });
-  $("#domain-list")?.addEventListener("click", (e) => {
-    if (e.target.classList.contains("del-btn")) {
-      const domain = e.target.dataset.domain;
-      ripData.trackedDomains = ripData.trackedDomains.filter(d => d !== domain);
-      delete ripData.sites[domain];
-      if (ripData.limits) delete ripData.limits[domain];
-      saveAndSync({ riphours: ripData }, () => toast("Removed " + domain));
-    }
-  });
-  $("#hard-block-toggle")?.addEventListener("click", () => {
-    const on = !$("#hard-block-toggle").classList.contains("on");
-    const apply = () => {
-      ripData.settings.hardBlock = on;
-      saveAndSync({ riphours: ripData }, () => toast(on ? "Hard block enabled" : "Hard block disabled"));
-    };
-    if (!on) requireIronWill(apply); else apply();
-  });
-  $("#better-alternatives")?.addEventListener("input", (e) => {
-    ripData.settings.alternatives = e.target.value;
-    saveAndSync({ riphours: ripData });
-  });
-  $$(".mode-btn").forEach(btn => btn.addEventListener("click", () => {
-    ripData.settings.mode = btn.dataset.mode;
-    saveAndSync({ riphours: ripData }, () => applyAppearance(btn.dataset.mode, ripData.settings.theme));
-  }));
-  $$(".theme-dot").forEach(dot => dot.addEventListener("click", () => {
-    ripData.settings.theme = dot.dataset.theme;
-    saveAndSync({ riphours: ripData }, () => applyAppearance(ripData.settings.mode, dot.dataset.theme));
-  }));
-  $("#btn-export-csv")?.addEventListener("click", () => {
-    const history = ripData.history || {};
-    const dates = Object.keys(history).sort();
-    if (dates.length === 0) return toast("No history.");
-    const allDomains = Array.from(new Set(dates.flatMap(d => Object.keys(history[d])))).sort();
-    let csv = "Date," + allDomains.join(",") + "\n";
-    // History stores cumulative snapshots — diff consecutive days for daily usage
-    dates.forEach((d, i) => {
-      const snapshot = history[d];
-      const prevSnapshot = (i > 0) ? history[dates[i - 1]] : {};
-      const dailyVals = allDomains.map(dom => {
-        const daily = Math.max(0, (snapshot[dom] || 0) - (prevSnapshot[dom] || 0));
-        return Math.floor(daily / 60); // Export in minutes for readability
-      });
-      csv += d + "," + dailyVals.join(",") + "\n";
-    });
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    chrome.downloads.download({ url, filename: "riphours-history.csv", saveAs: true });
-  });
-  $("#export-btn")?.addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(ripData, null, 2)], { type: "application/json" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = "riphours-backup.json"; a.click();
-    toast("Backup exported.");
-  });
-  $("#reset-btn")?.addEventListener("click", () => $("#reset-overlay").classList.add("open"));
-  $("#reset-cancel")?.addEventListener("click", () => $("#reset-overlay").classList.remove("open"));
-  $("#reset-input")?.addEventListener("input", () => $("#reset-confirm").disabled = $("#reset-input").value !== "RESET");
-  $("#reset-confirm")?.addEventListener("click", () => {
-    saveAndSync({ riphours: { sites: {}, trackedDomains: [...DEFAULT_DOMAINS], installDate: Date.now(), limits: {}, history: {}, settings: { hardBlock: true, theme: "red", mode: "dark" } } }, 
-    () => { $("#reset-overlay").classList.remove("open"); toast("Cleared."); });
-  });
-}
-
-function addDomain() {
-  let raw = $("#new-domain").value.trim().toLowerCase();
-  if (!raw) return;
-  raw = raw.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
-  if (!/^[a-z0-9]([a-z0-9\-]*\.)+[a-z]{2,}$/.test(raw) || ripData.trackedDomains.includes(raw)) return toast("Invalid or duplicate.");
-  ripData.trackedDomains.push(raw);
-  saveAndSync({ riphours: ripData }, () => { $("#new-domain").value = ""; toast("Added " + raw); });
-}
-
-// ── Iron Will Helper ──────────────────────────────────────────────
-function requireIronWill(callback) {
-  const phrase = "I am choosing to waste my limited time on earth doing nothing.";
-  const input = $("#iron-will-input");
-  const confirmBtn = $("#iron-will-confirm");
-  const overlay = $("#iron-will-overlay");
-  input.value = ""; confirmBtn.disabled = true; overlay.classList.add("open"); input.focus();
-
-  const onConfirm = () => { if (input.value === phrase) { overlay.classList.remove("open"); callback(); cleanup(); } };
-  const onCancel = () => { overlay.classList.remove("open"); cleanup(); };
-  const onInput = () => confirmBtn.disabled = input.value !== phrase;
-  const cleanup = () => { confirmBtn.removeEventListener("click", onConfirm); $("#iron-will-cancel").removeEventListener("click", onCancel); input.removeEventListener("input", onInput); };
-  
-  confirmBtn.addEventListener("click", onConfirm);
-  $("#iron-will-cancel").addEventListener("click", onCancel);
-  input.addEventListener("input", onInput);
-}
-
-// ── Init ──────────────────────────────────────────────────────────
-chrome.storage.local.get("riphours", async (data) => {
-  if (data.riphours) {
-    data.riphours.settings = data.riphours.settings || { hardBlock: true, theme: "red", mode: "dark" };
-    const session = await chrome.storage.session.get(null);
-    data.riphours._session = session;
-    render(data.riphours, true);
-  }
-  // On popup open, always tell the background to re-detect the active tab
-  // so that tracking resumes if it was lost during a tab switch
-  try { chrome.runtime.sendMessage({ type: "force-flush" }); } catch {}
+$(".tabs").addEventListener("click", (event) => {
+  const tab = event.target.closest("[role=tab]");
+  if (tab) selectTab(tab.id.replace("tab-", ""));
 });
 
-setInterval(async () => {
-  // Send force-flush and wait a moment for the background worker to
-  // process it and write updated data to storage before we read
-  try {
-    await chrome.runtime.sendMessage({ type: "force-flush" });
-  } catch {}
-  // Small delay to let the async flushTime() in background finish writing
-  await new Promise(r => setTimeout(r, 50));
+$(".tabs").addEventListener("keydown", (event) => {
+  const index = TABS.indexOf(view.tab);
+  const next = {
+    ArrowRight: (index + 1) % TABS.length,
+    ArrowLeft: (index - 1 + TABS.length) % TABS.length,
+    Home: 0,
+    End: TABS.length - 1,
+  }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  selectTab(TABS[next], { focus: true });
+});
 
-  const data = await chrome.storage.local.get("riphours");
-  if (data.riphours) {
-    const session = await chrome.storage.session.get(null);
-    data.riphours._session = session;
+document.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-goto]");
+  if (target) selectTab(target.dataset.goto, { focus: true });
+});
 
-    // Real-time update for live session label independent of data diffing
-    const sessionEl = $("#active-session-label");
-    if (sessionEl && currentPage === "dashboard") {
-      const csStart = session?.continuousStart || 0;
-      const csElapsed = csStart > 0 ? (Date.now() - csStart) : 0;
-      if (session?.currentHost && session.isWindowFocused && csElapsed > 0 && csElapsed < 24 * 60 * 60 * 1000) {
-        const activeSecs = Math.max(0, Math.floor(csElapsed / 1000));
-        sessionEl.textContent = `Currently on ${session.currentHost} for ${fmtTimer(activeSecs)}`;
-        sessionEl.style.display = "inline-block";
-      } else {
-        sessionEl.style.display = "none";
-      }
-    }
+// ── Stats ─────────────────────────────────────────────────────────
 
-    render(data.riphours);
+function rangeTotals() {
+  const map = view.range === "all" ? state.totals : state.daily[state.today] || {};
+  return state.trackedDomains.map((domain) => ({ domain, secs: map[domain] || 0 }));
+}
+
+function weekDays() {
+  const installKey = dayKey(state.installDate);
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const key = shiftDay(state.today, -i);
+    days.push({ key, secs: sumTracked(state.daily[key], state.trackedDomains), counted: key >= installKey });
   }
-}, 1000);
+  return days;
+}
+
+function weekAverage(days) {
+  const counted = days.filter((d) => d.counted);
+  if (!counted.length) return 0;
+  return counted.reduce((sum, d) => sum + d.secs, 0) / counted.length;
+}
+
+function renderStats() {
+  const rows = rangeTotals();
+  const total = rows.reduce((sum, r) => sum + r.secs, 0);
+
+  for (const button of $$(".segmented [data-range]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.range === view.range));
+  }
+
+  renderClock(total);
+  $("#caption").textContent = view.range === "all"
+    ? "of your life, spent on tracked sites"
+    : "today, spent on tracked sites";
+
+  const live = $("#live");
+  live.hidden = !state.live;
+  if (state.live) {
+    $("#live-text").textContent =
+      `${state.live.domain} · ${formatDuration(state.live.streak, { seconds: true })} this stretch`;
+  }
+
+  const days = weekDays();
+  $("#insight").textContent = view.range === "all" ? lifeInsight(total) : `Daily average this week: ${formatDuration(weekAverage(days))}`;
+
+  renderSites(rows);
+  renderChart(days);
+  renderFocus();
+}
+
+function renderClock(total) {
+  const parts = splitDuration(total);
+  const clock = $("#clock");
+  const showDays = view.range === "all" && parts.days > 0;
+  const units = [
+    ["days", parts.days, parts.days === 1 ? "day" : "days"],
+    ["hours", parts.hours, parts.hours === 1 ? "hr" : "hrs"],
+    ["minutes", parts.minutes, "min"],
+    ["seconds", parts.seconds, "sec"],
+  ];
+  let first = true;
+  for (const [name, value, label] of units) {
+    const unit = $(`[data-unit=${name}]`, clock);
+    const visible = name !== "days" || showDays;
+    unit.hidden = !visible;
+    if (!visible) continue;
+    const text = first ? String(value) : String(value).padStart(2, "0");
+    first = false;
+    const num = $(".num", unit);
+    if (num.textContent !== text) num.textContent = text;
+    $(".label", unit).textContent = label;
+  }
+  clock.classList.toggle("long", parts.days >= 100);
+  clock.setAttribute("aria-label", formatDuration(total));
+}
+
+function lifeInsight(total) {
+  const elapsed = state.now - state.installDate;
+  if (elapsed < 86_400_000) {
+    return dayKey(state.installDate) === state.today ? "Tracking started today." : "Tracking started yesterday.";
+  }
+  const waking = (elapsed / 1000) * (16 / 24);
+  const pct = (total / waking) * 100;
+  const share = pct < 1 ? "Under 1%" : `≈ ${Math.round(pct)}%`;
+  return `${share} of your waking hours since ${formatDate(state.installDate)}`;
+}
+
+const siteRows = new Map();
+
+function renderSites(rows) {
+  const search = $("#site-search");
+  search.hidden = state.trackedDomains.length <= 8;
+  const filter = search.hidden ? "" : view.filter.trim().toLowerCase();
+
+  const list = rows
+    .filter((r) => !filter || r.domain.includes(filter))
+    .sort((a, b) => b.secs - a.secs || a.domain.localeCompare(b.domain));
+  const max = Math.max(1, ...list.map((r) => r.secs));
+  const ul = $("#sites");
+
+  for (const { domain, secs } of list) {
+    let row = siteRows.get(domain);
+    if (!row) {
+      const fill = el("span", { class: "fill" });
+      const marker = el("span", { class: "marker", hidden: true });
+      row = {
+        li: el("li"),
+        time: el("span", { class: "time tnum" }),
+        bar: el("span", { class: "bar", "aria-hidden": "true" }, [fill, marker]),
+        fill,
+        marker,
+      };
+      row.li.append(favicon(domain), el("span", { class: "domain", text: domain }), row.time, row.bar);
+      siteRows.set(domain, row);
+    }
+    updateSiteRow(row, domain, secs, max);
+  }
+
+  const visible = new Set(list.map((r) => r.domain));
+  for (const [domain, row] of siteRows) {
+    if (!visible.has(domain)) {
+      row.li.remove();
+      siteRows.delete(domain);
+    }
+  }
+  list.forEach(({ domain }, i) => {
+    const li = siteRows.get(domain).li;
+    if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] ?? null);
+  });
+
+  $("#sites-empty").hidden = state.trackedDomains.length > 0;
+}
+
+function updateSiteRow(row, domain, secs, max) {
+  const limit = view.range === "today" ? state.limits[domain] || 0 : 0;
+  let pct;
+  let text = formatDuration(secs);
+  row.bar.className = "bar";
+  row.marker.hidden = true;
+
+  if (limit) {
+    const scale = Math.max(limit, secs);
+    const ratio = secs / limit;
+    pct = (secs / scale) * 100;
+    text = `${formatDuration(secs)} / ${formatDuration(limit)}`;
+    row.bar.classList.add("limited");
+    if (ratio >= 1) row.bar.classList.add("over");
+    else if (ratio >= 0.75) row.bar.classList.add("warn");
+    if (secs > limit) {
+      row.marker.hidden = false;
+      row.marker.style.setProperty("--m", `${(limit / scale) * 100}%`);
+    }
+  } else {
+    pct = (secs / max) * 100;
+    // Today without a limit: no color, since nothing is at stake.
+    if (view.range === "today") row.bar.classList.add("limited");
+  }
+
+  if (row.time.textContent !== text) row.time.textContent = text;
+  row.time.classList.toggle("over", Boolean(limit) && secs >= limit);
+  row.fill.style.setProperty("--p", `${pct}%`);
+  row.li.classList.toggle("zero", secs === 0);
+}
+
+$("#site-search").addEventListener("input", (event) => {
+  view.filter = event.target.value;
+  renderStats();
+});
+
+for (const button of $$(".segmented [data-range]")) {
+  button.addEventListener("click", () => {
+    view.range = button.dataset.range;
+    saveView();
+    renderStats();
+  });
+}
+
+let chartDays = [];
+
+function renderChart(days) {
+  chartDays = days;
+  const chart = $("#chart");
+  if (chart.children.length !== 7) {
+    chart.replaceChildren(...days.map((_, i) => el("button", {
+      type: "button",
+      class: "day",
+      "data-index": i,
+    }, [el("span", { class: "track" }, [el("span", { class: "col" })]), el("span", { class: "dow" })])));
+  }
+
+  const max = Math.max(60, ...days.map((d) => d.secs));
+  days.forEach((day, i) => {
+    const button = chart.children[i];
+    const date = keyToDate(day.key);
+    button.classList.toggle("today", day.key === state.today);
+    $(".col", button).style.setProperty("--h", `${(day.secs / max) * 100}%`);
+    $(".dow", button).textContent = date.toLocaleDateString(undefined, { weekday: "short" });
+    button.setAttribute("aria-label",
+      `${date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}: ${formatDuration(day.secs)}`);
+  });
+  renderWeekMeta();
+}
+
+function renderWeekMeta() {
+  const day = view.hoverDay !== null ? chartDays[view.hoverDay] : null;
+  $("#week-meta").textContent = day
+    ? `${keyToDate(day.key).toLocaleDateString(undefined, { weekday: "short" })} · ${formatDuration(day.secs)}`
+    : `avg ${formatDuration(weekAverage(chartDays))}`;
+}
+
+for (const type of ["pointerover", "focusin"]) {
+  $("#chart").addEventListener(type, (event) => {
+    const button = event.target.closest(".day");
+    if (!button) return;
+    view.hoverDay = Number(button.dataset.index);
+    renderWeekMeta();
+  });
+}
+for (const type of ["pointerleave", "focusout"]) {
+  $("#chart").addEventListener(type, () => {
+    view.hoverDay = null;
+    renderWeekMeta();
+  });
+}
+
+function renderFocus() {
+  const button = $("#focus-btn");
+  const left = state.settings.focusUntil - Date.now();
+  const running = left > 0;
+  button.classList.toggle("running", running);
+  button.disabled = running || state.trackedDomains.length === 0;
+  $("#focus-label").textContent = running ? `Focus ends in ${formatClock(left)}` : "Focus · 25 min";
+  $("#focus-progress").style.setProperty("--p", running ? `${(1 - left / FOCUS_MS) * 100}%` : "0%");
+  button.title = running ? "" : "Block every tracked site for 25 minutes";
+}
+
+$("#focus-btn").addEventListener("click", () => {
+  act(send("start-focus"), "Focus Surge on. Tracked sites are blocked for 25 minutes.");
+});
+
+// ── Share card ────────────────────────────────────────────────────
+
+$("#share-btn").addEventListener("click", async () => {
+  const rows = rangeTotals();
+  const top = rows.filter((r) => r.secs > 0).sort((a, b) => b.secs - a.secs).slice(0, 3);
+  const canvas = $("#share-canvas");
+  await drawShareCard(canvas, {
+    seconds: rows.reduce((sum, r) => sum + r.secs, 0),
+    sites: top.map((r) => r.domain),
+    range: view.range,
+    accent: ACCENTS[state.settings.theme],
+    date: formatDate(state.now, { year: true }),
+  });
+  $("#share-dialog").showModal();
+});
+
+$("#share-copy").addEventListener("click", async () => {
+  try {
+    const blob = await canvasToBlob($("#share-canvas"));
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    toast("Image copied.");
+  } catch {
+    toast("Couldn't copy. Save the PNG instead.");
+  }
+});
+
+$("#share-save").addEventListener("click", async () => {
+  download(await canvasToBlob($("#share-canvas")), `riphours-${state.today}.png`);
+});
+
+// ── Dialogs ───────────────────────────────────────────────────────
+
+function openDialog(dialog) {
+  return new Promise((resolve) => {
+    dialog.returnValue = "";
+    dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
+    dialog.showModal();
+  });
+}
+
+const normalizePhrase = (text) => text.toLowerCase().replace(/\s+/g, " ").trim();
+const IRON_TARGET = normalizePhrase(IRON_WILL_PHRASE);
+
+$("#iron-phrase").textContent = IRON_WILL_PHRASE;
+
+function updateIronWill() {
+  const typed = normalizePhrase($("#iron-input").value);
+  let matched = 0;
+  while (matched < typed.length && typed[matched] === IRON_TARGET[matched]) matched++;
+  $("#iron-bar").style.setProperty("--p", `${(matched / IRON_TARGET.length) * 100}%`);
+  $("#iron-confirm").disabled = typed !== IRON_TARGET;
+}
+
+{
+  const input = $("#iron-input");
+  // The phrase has to be typed. Pasting it defeats the point.
+  for (const type of ["paste", "drop"]) input.addEventListener(type, (event) => event.preventDefault());
+  input.addEventListener("beforeinput", (event) => {
+    if (/^insertFrom(Paste|Drop|Yank)/.test(event.inputType)) event.preventDefault();
+  });
+  input.addEventListener("input", updateIronWill);
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!$("#iron-confirm").disabled) $("#iron-will").close("confirm");
+  });
+}
+
+async function ironWill(reason) {
+  $("#iron-reason").textContent = reason;
+  $("#iron-input").value = "";
+  updateIronWill();
+  const result = await openDialog($("#iron-will"));
+  return result === "confirm" && normalizePhrase($("#iron-input").value) === IRON_TARGET;
+}
+
+// ── Limits ────────────────────────────────────────────────────────
+
+const limitRows = new Map();
+
+function renderLimits() {
+  const ul = $("#limits");
+  const today = state.daily[state.today] || {};
+
+  for (const domain of state.trackedDomains) {
+    let row = limitRows.get(domain);
+    if (!row) row = createLimitRow(domain);
+    const used = today[domain] || 0;
+    const limit = state.limits[domain] || 0;
+    const sub = `${formatDuration(used)} today${limit && used >= limit ? " · over" : ""}`;
+    if (row.sub.textContent !== sub) row.sub.textContent = sub;
+    row.sub.classList.toggle("over", Boolean(limit) && used >= limit);
+    if (!row.dirty && document.activeElement !== row.input) row.input.value = limit ? String(Math.round(limit / 60)) : "";
+  }
+
+  for (const [domain, row] of limitRows) {
+    if (!state.trackedDomains.includes(domain)) {
+      row.li.remove();
+      limitRows.delete(domain);
+    }
+  }
+  state.trackedDomains.forEach((domain, i) => {
+    const li = limitRows.get(domain).li;
+    if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] ?? null);
+  });
+
+  $("#limits-empty").hidden = state.trackedDomains.length > 0;
+
+  const note = $("#limits-note");
+  note.replaceChildren();
+  if (state.settings.hardBlock) {
+    note.append(el("strong", { text: "Hard block is on." }),
+      " When a limit runs out, that site's tabs go to a block page until midnight. Loosening a limit takes Iron Will.");
+  } else {
+    note.append(el("strong", { text: "Hard block is off." }),
+      " A spent limit only shows a reminder, snoozable 10 minutes at a time. ",
+      el("button", { type: "button", class: "link", "data-goto": "settings", text: "Change in Settings" }), ".");
+  }
+}
+
+function createLimitRow(domain) {
+  const input = el("input", {
+    class: "field",
+    type: "number",
+    min: 0,
+    max: 1440,
+    step: 1,
+    inputmode: "numeric",
+    placeholder: "—",
+    "aria-label": `Daily limit for ${domain}, in minutes`,
+  });
+  const save = el("button", { type: "button", class: "btn primary limit-save", text: "Save", hidden: true });
+  const sub = el("span", { class: "sub tnum" });
+  const li = el("li", {}, [
+    favicon(domain),
+    el("div", { class: "limit-meta" }, [el("span", { class: "domain", text: domain }), sub]),
+    el("div", { class: "limit-edit" }, [
+      el("label", { class: "minutes" }, [input, el("span", { class: "suffix", text: "min" })]),
+      save,
+    ]),
+  ]);
+  const row = { li, input, save, sub, dirty: false };
+
+  const current = () => Math.round((state.limits[domain] || 0) / 60);
+  const parse = () => {
+    const n = Math.floor(Number(input.value));
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 1440) : 0;
+  };
+  const revert = () => {
+    row.dirty = false;
+    save.hidden = true;
+    input.value = current() ? String(current()) : "";
+  };
+
+  input.addEventListener("input", () => {
+    row.dirty = parse() !== current();
+    save.hidden = !row.dirty;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && row.dirty) {
+      // Otherwise the same keystroke lands in the Iron Will box as a newline.
+      event.preventDefault();
+      commit();
+    }
+    if (event.key === "Escape" && row.dirty) {
+      event.preventDefault();
+      revert();
+    }
+  });
+  save.addEventListener("click", () => commit());
+
+  async function commit() {
+    const minutes = parse();
+    const before = current();
+    const loosening = before > 0 && (minutes === 0 || minutes > before);
+    if (loosening && !(await ironWill("Loosening a limit takes Iron Will. Type this exactly:"))) {
+      revert();
+      return;
+    }
+    const result = await act(send("set-limit", { domain, seconds: minutes * 60 }),
+      minutes ? `${domain}: ${formatDuration(minutes * 60)} a day.` : `Limit removed from ${domain}.`);
+    if (result) {
+      row.dirty = false;
+      save.hidden = true;
+      renderLimits();
+    }
+  }
+
+  limitRows.set(domain, row);
+  return row;
+}
+
+// ── Settings ──────────────────────────────────────────────────────
+
+let trackedSignature = "";
+
+function renderSettings() {
+  const signature = JSON.stringify([state.trackedDomains, state.limits]);
+  if (signature !== trackedSignature) {
+    trackedSignature = signature;
+    $("#tracked").replaceChildren(...state.trackedDomains.map((domain) => {
+      const limit = state.limits[domain];
+      return el("li", {}, [
+        favicon(domain),
+        el("span", { class: "domain", text: domain }),
+        limit ? el("span", { class: "tag tnum", text: `${formatDuration(limit)} limit` }) : "",
+        el("button", {
+          type: "button",
+          class: "icon-btn",
+          "aria-label": `Stop tracking ${domain}`,
+          title: "Stop tracking",
+          onclick: () => removeDomain(domain),
+        }, [crossIcon()]),
+      ]);
+    }));
+  }
+
+  const { settings } = state;
+  $("#hardblock").setAttribute("aria-checked", String(settings.hardBlock));
+  $("#breaks").setAttribute("aria-checked", String(settings.breakReminders));
+  $("#recap").setAttribute("aria-checked", String(settings.nightlyRecap));
+  $("#sound").setAttribute("aria-checked", String(settings.sound));
+
+  const alternatives = $("#alternatives");
+  if (document.activeElement !== alternatives && !alternativesTimer) alternatives.value = settings.alternatives;
+
+  for (const button of $$("#modes [data-mode]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === settings.mode));
+  }
+  for (const button of $$("#swatches .swatch")) {
+    button.setAttribute("aria-pressed", String(button.dataset.accent === settings.theme));
+  }
+}
+
+function crossIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("width", "12");
+  svg.setAttribute("height", "12");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M3 3l6 6M9 3l-6 6");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.5");
+  path.setAttribute("stroke-linecap", "round");
+  svg.append(path);
+  return svg;
+}
+
+async function removeDomain(domain) {
+  if (state.limits[domain]
+    && !(await ironWill(`${domain} has a limit, and removing the site removes it too. Type this exactly:`))) {
+    return;
+  }
+  act(send("remove-domain", { domain }), `Stopped tracking ${domain}. Its history is kept.`);
+}
+
+$("#add-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = $("#add-input");
+  const error = $("#add-error");
+  try {
+    const { domain } = await send("add-domain", { domain: input.value });
+    input.value = "";
+    error.hidden = true;
+    toast(`Tracking ${domain}.`);
+    await load();
+  } catch (err) {
+    error.textContent = err.message;
+    error.hidden = false;
+  }
+});
+
+$("#add-input").addEventListener("input", () => {
+  $("#add-error").hidden = true;
+});
+
+function updateSettings(patch, message) {
+  state.settings = { ...state.settings, ...patch };
+  applyTheme(state.settings);
+  renderSettings();
+  return act(send("update-settings", { settings: patch }), message);
+}
+
+$("#hardblock").addEventListener("click", async () => {
+  if (state.settings.hardBlock) {
+    if (!(await ironWill("Turning off hard block loosens every limit. Type this exactly:"))) return;
+    updateSettings({ hardBlock: false }, "Hard block off. Limits now only remind you.");
+  } else {
+    updateSettings({ hardBlock: true }, "Hard block on.");
+  }
+});
+
+for (const [id, key] of [["breaks", "breakReminders"], ["recap", "nightlyRecap"], ["sound", "sound"]]) {
+  $(`#${id}`).addEventListener("click", () => updateSettings({ [key]: !state.settings[key] }));
+}
+
+let alternativesTimer = null;
+
+function flushAlternatives() {
+  clearTimeout(alternativesTimer);
+  alternativesTimer = null;
+  const value = $("#alternatives").value;
+  if (value !== state.settings.alternatives) updateSettings({ alternatives: value });
+}
+
+$("#alternatives").addEventListener("input", () => {
+  clearTimeout(alternativesTimer);
+  alternativesTimer = setTimeout(flushAlternatives, 700);
+});
+$("#alternatives").addEventListener("blur", flushAlternatives);
+
+for (const button of $$("#modes [data-mode]")) {
+  button.addEventListener("click", () => updateSettings({ mode: button.dataset.mode }));
+}
+
+$("#swatches").append(...Object.keys(ACCENTS).map((name) => el("button", {
+  type: "button",
+  class: "swatch",
+  "data-accent": name,
+  "aria-label": `${name[0].toUpperCase()}${name.slice(1)} accent`,
+  "aria-pressed": "false",
+  style: { "--c": ACCENTS[name] },
+  onclick: () => updateSettings({ theme: name }),
+})));
+
+// ── Data ──────────────────────────────────────────────────────────
+
+$("#export-csv").addEventListener("click", async () => {
+  const { data } = await send("export");
+  const dates = Object.keys(data.daily).sort();
+  const seen = new Set(dates.flatMap((d) => Object.keys(data.daily[d])));
+  const domains = [
+    ...data.trackedDomains.filter((d) => seen.has(d)),
+    ...[...seen].filter((d) => !data.trackedDomains.includes(d)).sort(),
+  ];
+  const lines = [["date", ...domains].join(",")];
+  for (const date of dates) {
+    lines.push([date, ...domains.map((d) => Math.round(((data.daily[date][d] || 0) / 60) * 10) / 10)].join(","));
+  }
+  download(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }), `riphours-daily-minutes-${state.today}.csv`);
+  toast(dates.length ? "CSV saved: minutes per site, per day." : "Nothing recorded yet. Saved an empty CSV.");
+});
+
+$("#export-json").addEventListener("click", async () => {
+  const { data } = await send("export");
+  const backup = {
+    app: "RIPHours",
+    version: chrome.runtime.getManifest().version,
+    exportedAt: new Date().toISOString(),
+    data,
+  };
+  download(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }), `riphours-backup-${state.today}.json`);
+  toast("Backup saved.");
+});
+
+$("#import-json").addEventListener("click", () => $("#import-file").click());
+
+$("#import-file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch {
+    toast("That file isn't valid JSON.");
+    return;
+  }
+  const exportedAt = Date.parse(payload?.exportedAt);
+  $("#import-text").textContent =
+    `Everything on this device (usage history, tracked sites, limits and settings) will be replaced with ${
+      Number.isFinite(exportedAt) ? `the backup from ${formatDate(exportedAt, { year: true })}` : `the contents of ${file.name}`}.`;
+  if ((await openDialog($("#import-dialog"))) !== "confirm") return;
+  act(send("import", { payload }), "Backup restored.");
+});
+
+{
+  const input = $("#reset-input");
+  const confirm = $("#reset-confirm");
+  input.addEventListener("input", () => {
+    confirm.disabled = input.value.trim() !== "RESET";
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!confirm.disabled) $("#reset-dialog").close("confirm");
+  });
+  $("#reset-btn").addEventListener("click", async () => {
+    input.value = "";
+    confirm.disabled = true;
+    if ((await openDialog($("#reset-dialog"))) !== "confirm") return;
+    act(send("reset"), "Usage history erased.");
+  });
+}
+
+// ── Start ─────────────────────────────────────────────────────────
+
+$("#version").textContent = `RIPHours ${chrome.runtime.getManifest().version}`;
+selectTab(view.tab);
+moveIndicator(false);
+document.fonts.ready.then(() => moveIndicator(false));
+
+load(true).then(() => setInterval(load, 1000));

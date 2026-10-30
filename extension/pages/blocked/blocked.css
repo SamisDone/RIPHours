@@ -1,0 +1,41 @@
+.countdown {
+  max-width: 34em;
+  height: 2px;
+  margin-top: 22px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.countdown span {
+  display: block;
+  height: 100%;
+  width: var(--p, 0%);
+  background: var(--accent);
+  transition: width 1s linear;
+}
+
+.instead {
+  max-width: 34em;
+  margin-top: 40px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px var(--radius) var(--radius) 4px;
+  background: var(--surface);
+}
+
+.instead .caps {
+  color: var(--text-3);
+}
+
+.instead p {
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.actions {
+  margin-top: 36px;
+}

@@ -1,0 +1,67 @@
+/* Layout for the full-tab pages: the block page and the welcome page. */
+
+body {
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.page {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: clamp(48px, 12vh, 120px) 24px 64px;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 28px;
+  color: var(--accent);
+}
+
+.eyebrow svg {
+  color: var(--text);
+}
+
+.display {
+  font-family: var(--serif);
+  font-size: clamp(44px, 8vw, 68px);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.display em {
+  font-style: italic;
+}
+
+.lede {
+  max-width: 34em;
+  margin-top: 18px;
+  color: var(--text-2);
+  font-size: 17px;
+  text-wrap: pretty;
+}
+
+.lede strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.page .btn {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.reveal {
+  animation: reveal 420ms var(--ease) both;
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(8px); }
+}

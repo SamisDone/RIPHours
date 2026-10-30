@@ -1,136 +1,37 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>RIPHours — Access Limited</title>
-  <style>
-    :root {
-      --bg: #09090b;
-      --text: #fafafa;
-      --text-secondary: #a1a1aa;
-      --accent: #ef4444;
-      --border: rgba(255, 255, 255, 0.05);
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    @font-face {
-      font-family: 'Inter';
-      src: url('../../fonts/Inter-Regular.woff2') format('woff2');
-      font-weight: 400;
-    }
-    @font-face {
-      font-family: 'Inter';
-      src: url('../../fonts/Inter-Bold.woff2') format('woff2');
-      font-weight: 700;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font-sans);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      -webkit-font-smoothing: antialiased;
-      overflow: hidden;
-    }
-
-    .container {
-      text-align: center;
-      max-width: 480px;
-      padding: 40px;
-      animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .icon {
-      font-size: 64px;
-      margin-bottom: 24px;
-      filter: drop-shadow(0 0 12px var(--accent));
-      opacity: 0.8;
-    }
-
-    h1 {
-      font-size: 32px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 12px;
-    }
-
-    .site {
-      display: inline-block;
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--accent);
-      background: rgba(239, 68, 68, 0.1);
-      padding: 4px 12px;
-      border-radius: 99px;
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      margin-bottom: 24px;
-    }
-
-    p {
-      font-size: 16px;
-      color: var(--text-secondary);
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .footer {
-      font-size: 13px;
-      color: #52525b;
-      padding-top: 24px;
-      border-top: 1px solid var(--border);
-    }
-
-    .brand {
-      font-weight: 700;
-      color: var(--text);
-      opacity: 0.5;
-      margin-top: 40px;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.2em;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Blocked · RIPHours</title>
+  <link rel="icon" href="../../icons/icon32.png">
+  <script src="../../shared/boot-theme.js"></script>
+  <link rel="stylesheet" href="../../shared/theme.css">
+  <link rel="stylesheet" href="../../shared/page.css">
+  <link rel="stylesheet" href="blocked.css">
+  <script type="module" src="blocked.js"></script>
 </head>
 <body>
-  <div class="container">
-    <div class="icon">⚰</div>
-    <h1>Time's Up</h1>
-    <div class="site" id="site-name">...</div>
-    <p>You've hit your limit. RIPHours has limited access to this site to protect your time. Focus on what truly matters today.</p>
-    
-    <div class="footer" id="touch-grass-text">
-      The block resets at midnight. Go touch grass.
+  <main class="page reveal">
+    <p class="eyebrow caps">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <path d="M4 1.75h8M4 14.25h8M5 1.75c0 3.6 3 4.3 3 6.25S5 10.65 5 14.25M11 1.75c0 3.6-3 4.3-3 6.25s3 2.65 3 6.25"
+          fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M6.1 13.4 8 11.3l1.9 2.1Z" fill="var(--accent)"/>
+      </svg>
+      RIPHours
+    </p>
+    <h1 class="display" id="title">Blocked.</h1>
+    <p class="lede tnum" id="lede" aria-live="polite"></p>
+    <div class="countdown" id="countdown" hidden aria-hidden="true"><span id="countdown-bar"></span></div>
+    <aside class="instead" id="instead" hidden>
+      <span class="caps">Do this instead</span>
+      <p id="instead-text"></p>
+    </aside>
+    <div class="actions">
+      <a class="btn primary" id="back" hidden></a>
     </div>
-    
-    <div class="brand">RIPHours</div>
-  </div>
-  <script src="blocked.js"></script>
-  <script>
-    const ACCENT_MAP = {
-      red: { color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)", border: "rgba(239, 68, 68, 0.2)" },
-      green: { color: "#10b981", bg: "rgba(16, 185, 129, 0.1)", border: "rgba(16, 185, 129, 0.2)" },
-      purple: { color: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)", border: "rgba(139, 92, 246, 0.2)" },
-      blue: { color: "#3b82f6", bg: "rgba(59, 130, 246, 0.1)", border: "rgba(59, 130, 246, 0.2)" },
-      orange: { color: "#f97316", bg: "rgba(249, 115, 22, 0.1)", border: "rgba(249, 115, 22, 0.2)" },
-      pink: { color: "#f43f5e", bg: "rgba(244, 63, 94, 0.1)", border: "rgba(244, 63, 94, 0.2)" },
-    };
-    chrome.storage.local.get("riphours", (data) => {
-      const theme = data.riphours?.settings?.theme || "red";
-      const a = ACCENT_MAP[theme] || ACCENT_MAP.red;
-      document.documentElement.style.setProperty("--accent", a.color);
-      const siteEl = document.querySelector(".site");
-      if (siteEl) { siteEl.style.background = a.bg; siteEl.style.borderColor = a.border; }
-    });
-  </script>
+  </main>
 </body>
 </html>
